@@ -1,0 +1,14 @@
+{
+  "name": "cityeye",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "npm run dev:all",
+    "dev:all": "npm --prefix backend run start & npm --prefix frontend run dev & wait",
+    "dev:backend": "npm --prefix backend run start",
+    "dev:backend:watch": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "start": "npm --prefix backend run start",
+    "build": "npm --prefix frontend run build"
+  }
+}
