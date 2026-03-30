@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
+import { supabase } from './lib/supabase';
 import './index.css';
 import YandexMap from './YandexMap';
 import FeedTab from './tabs/FeedTab';
 import ReportTab from './tabs/ReportTab';
-import GovTab from './tabs/GovTab';
 import Dashboard from './tabs/Dashboard';
+import AuthModal from './AuthModal';
 import { getReports } from './api';
 
 /* ── Glassmorphism base style ── */
@@ -65,16 +66,6 @@ function districtScore(name) {
 function EyeLogo() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-      <div style={{
-        width: 40, height: 40, borderRadius: 12, background: '#0f0f0f',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <svg width="22" height="16" viewBox="0 0 24 16" fill="none">
-          <path d="M1 8s4-7 11-7 11 7 11 7-4 7-11 7S1 8 1 8z"
-            stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <circle cx="12" cy="8" r="3" stroke="white" strokeWidth="2"/>
-        </svg>
-      </div>
       <div>
         <div style={{
           fontFamily: '"Playfair Display", Georgia, serif',
@@ -93,14 +84,14 @@ function EyeLogo() {
   );
 }
 
-function NavTabs({ tab, setTab }) {
+function NavTabs({ tab, onTabChange }) {
   return (
     <nav style={{
       display: 'flex', background: 'rgba(0,0,0,0.05)',
       borderRadius: 10, padding: 3, gap: 2,
     }}>
       {TABS.map(t => (
-        <button key={t.id} onClick={() => setTab(t.id)} style={{
+        <button key={t.id} onClick={() => onTabChange(t.id)} style={{
           background: tab === t.id ? '#0f0f0f' : 'transparent',
           color: tab === t.id ? '#fff' : '#666',
           padding: '6px 18px', borderRadius: 8,
@@ -121,6 +112,70 @@ function Dot({ color, size = 8, round = false }) {
       borderRadius: round ? '50%' : 2,
       background: color,
     }} />
+  );
+}
+
+/* ── Shared Navbar ── */
+function Navbar({ tab, onTabChange, user, onAuth, onLogout }) {
+  return (
+    <header style={{
+      gridColumn: '1 / -1', ...glass,
+      display: 'flex', alignItems: 'center',
+      justifyContent: 'space-between', padding: '0 20px',
+    }}>
+      <EyeLogo />
+      <NavTabs tab={tab} onTabChange={onTabChange} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          background: 'rgba(0,0,0,0.04)', borderRadius: 8,
+          padding: '7px 12px', border: '1px solid rgba(0,0,0,0.07)',
+        }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <span style={{ fontSize: '0.82rem', color: '#aaa' }}>Поиск...</span>
+        </div>
+
+        {user ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              background: 'rgba(0,0,0,0.05)', borderRadius: 8,
+              padding: '6px 12px', border: '1px solid rgba(0,0,0,0.08)',
+            }}>
+              <div style={{
+                width: 26, height: 26, borderRadius: '50%',
+                background: '#0f0f0f',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>
+              </div>
+              <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#0f0f0f' }}>{user.name}</span>
+            </div>
+            <button onClick={onLogout} style={{
+              background: 'rgba(0,0,0,0.06)', color: '#666',
+              padding: '8px 12px', borderRadius: 8,
+              fontSize: '0.8rem', fontWeight: 500,
+            }}>
+              Выйти
+            </button>
+          </div>
+        ) : (
+          <button onClick={onAuth} style={{
+            background: '#0f0f0f', color: '#fff',
+            padding: '8px 16px', borderRadius: 8,
+            fontSize: '0.84rem', fontWeight: 600,
+          }}>
+            Войти в аккаунт
+          </button>
+        )}
+      </div>
+    </header>
   );
 }
 
@@ -245,9 +300,12 @@ function RightPanel({ reports, onReport, onDashboard }) {
                   width: 34, height: 34, borderRadius: 7, flexShrink: 0,
                   background: 'rgba(0,0,0,0.05)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 14,
                 }}>
-                  📷
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2" strokeLinecap="round">
+                    <rect x="3" y="3" width="18" height="18" rx="3"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <polyline points="21 15 16 10 5 21"/>
+                  </svg>
                 </div>
               )}
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -365,55 +423,46 @@ function Divider() {
   return <div style={{ height: 1, background: 'rgba(0,0,0,0.06)', flexShrink: 0 }} />;
 }
 
-/* ── Shared Navbar ── */
-function Navbar({ tab, setTab }) {
-  return (
-    <header style={{
-      gridColumn: '1 / -1', ...glass,
-      display: 'flex', alignItems: 'center',
-      justifyContent: 'space-between', padding: '0 20px',
-    }}>
-      <EyeLogo />
-      <NavTabs tab={tab} setTab={setTab} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          background: 'rgba(0,0,0,0.04)', borderRadius: 8,
-          padding: '7px 12px', border: '1px solid rgba(0,0,0,0.07)',
-        }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2" strokeLinecap="round">
-            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-          </svg>
-          <span style={{ fontSize: '0.82rem', color: '#aaa' }}>Поиск...</span>
-        </div>
-        <button onClick={() => setTab('gov')} style={{
-          background: '#0f0f0f', color: '#fff',
-          padding: '8px 16px', borderRadius: 8,
-          fontSize: '0.84rem', fontWeight: 600,
-        }}>
-          Акимат
-        </button>
-      </div>
-    </header>
-  );
-}
-
 /* ══════════════════════════════════════════
    MAIN APP
 ══════════════════════════════════════════ */
 export default function App() {
+  useEffect(() => {
+  supabase.from('reports').select('*').limit(1)
+    .then(({ data, error }) => {
+      if (error) {
+        console.error('Supabase error:', error.message)
+      } else {
+        console.log('Supabase connected!')
+      }
+    })
+}, [])
   const [tab, setTab] = useState('map');
   const [activeFilter, setActiveFilter] = useState('all');
   const [reports, setReports] = useState([]);
+  const [showAuth, setShowAuth] = useState(false);
 
   const [user, setUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem('cityeye_user')) ?? null; } catch { return null; }
   });
 
+  function handleTabChange(id) {
+    if (id === 'gov' && (!user || user.role !== 'government')) {
+      setShowAuth(true);
+      return;
+    }
+    setTab(id);
+  }
+
   function handleLogout() {
     localStorage.removeItem('cityeye_user');
     setUser(null);
     setTab('map');
+  }
+
+  function handleLogin(u) {
+    setUser(u);
+    if (u.role === 'government') setTab('gov');
   }
 
   const refreshReports = useCallback(async () => {
@@ -422,19 +471,31 @@ export default function App() {
 
   useEffect(() => { refreshReports(); }, [refreshReports]);
 
+  const authModal = showAuth && (
+    <AuthModal onClose={() => setShowAuth(false)} onLogin={handleLogin} />
+  );
+
   /* ── Full-page dark tabs ── */
   if (tab === 'feed') {
-    return <FeedTab reports={reports} onTabChange={setTab} />;
+    return (
+      <>
+        <FeedTab reports={reports} onTabChange={handleTabChange} user={user} />
+        {authModal}
+      </>
+    );
   }
   if (tab === 'gov') {
     return (
-      <Dashboard
-        reports={reports}
-        onStatusChange={refreshReports}
-        onTabChange={setTab}
-        user={user}
-        onLogout={handleLogout}
-      />
+      <>
+        <Dashboard
+          reports={reports}
+          onStatusChange={refreshReports}
+          onTabChange={handleTabChange}
+          user={user}
+          onLogout={handleLogout}
+        />
+        {authModal}
+      </>
     );
   }
 
@@ -443,21 +504,18 @@ export default function App() {
     return (
       <div style={{ minHeight: '100vh', background: '#eef0eb', display: 'flex', flexDirection: 'column' }}>
         <div style={{ margin: '10px 10px 0' }}>
-          <header style={{ ...glass, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', height: 64 }}>
-            <EyeLogo />
-            <NavTabs tab={tab} setTab={setTab} />
-            <button onClick={() => setTab('gov')} style={{
-              background: '#0f0f0f', color: '#fff',
-              padding: '8px 16px', borderRadius: 8,
-              fontSize: '0.84rem', fontWeight: 600,
-            }}>
-              Акимат
-            </button>
-          </header>
+          <Navbar
+            tab={tab}
+            onTabChange={handleTabChange}
+            user={user}
+            onAuth={() => setShowAuth(true)}
+            onLogout={handleLogout}
+          />
         </div>
         <main style={{ flex: 1, padding: '20px 10px 10px', maxWidth: 980, margin: '0 auto', width: '100%' }}>
           {tab === 'report' && <ReportTab onNewReport={refreshReports} />}
         </main>
+        {authModal}
       </div>
     );
   }
@@ -472,7 +530,13 @@ export default function App() {
       height: '100vh', background: '#eef0eb',
       overflow: 'hidden', boxSizing: 'border-box',
     }}>
-      <Navbar tab={tab} setTab={setTab} />
+      <Navbar
+        tab={tab}
+        onTabChange={handleTabChange}
+        user={user}
+        onAuth={() => setShowAuth(true)}
+        onLogout={handleLogout}
+      />
 
       <LeftPanel
         reports={reports}
@@ -487,11 +551,13 @@ export default function App() {
 
       <RightPanel
         reports={reports}
-        onReport={() => setTab('report')}
-        onDashboard={() => setTab('gov')}
+        onReport={() => handleTabChange('report')}
+        onDashboard={() => handleTabChange('gov')}
       />
 
-      <BottomBar reports={reports} onReport={() => setTab('report')} />
+      <BottomBar reports={reports} onReport={() => handleTabChange('report')} />
+
+      {authModal}
     </div>
   );
 }

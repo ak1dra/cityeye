@@ -79,6 +79,16 @@ select { appearance: none; cursor: pointer; }
 .ypin4 { animation-delay: 2.4s; }
 .ypin5 { animation-delay: 0.3s; }
 
+/* Glassmorphism panel */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  border-radius: 16px;
+}
+
 /* Yandex balloon override */
 .ymaps-2-1-79-balloon__content { padding: 0 !important; }
 .ymaps-2-1-79-balloon__layout { border-radius: 12px !important; overflow: hidden !important; }

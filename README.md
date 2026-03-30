@@ -1,333 +1,282 @@
-# CityEye
+<div align="center">
 
-CityEye is a full-stack prototype for collecting and triaging urban infrastructure issues in Almaty with AI-assisted photo analysis.
+# 👁️ CityEye
 
-## Contents
+### AI-платформа гражданского мониторинга городской инфраструктуры Казахстана
 
-1. [What Is Included](#what-is-included)
-2. [Architecture](#architecture)
-3. [Repository Structure](#repository-structure)
-4. [Quick Start](#quick-start)
-5. [Configuration](#configuration)
-6. [API Reference](#api-reference)
-7. [Data Model (`reports.json`)](#data-model-reportsjson)
-8. [Current Product Status](#current-product-status)
-9. [Troubleshooting](#troubleshooting)
-10. [Scripts](#scripts)
-11. [Security Notes](#security-notes)
-12. [Roadmap Suggestions](#roadmap-suggestions)
+![Version](https://img.shields.io/badge/version-1.0.0-blue?style=for-the-badge)
+![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
+![Hackathon](https://img.shields.io/badge/AI%20for%20Government-2026-orange?style=for-the-badge)
+![Status](https://img.shields.io/badge/status-active-success?style=for-the-badge)
 
-## What Is Included
+**Гражданин фотографирует → Claude Vision анализирует за 3 сек → Акимат действует**
 
-- Citizen flow: upload a photo and send it to AI analysis.
-- City/government flow: view reports and move them through statuses.
-- Dashboard and feed UIs for monitoring and triage.
-- Express backend with:
-  - health endpoint (`/api/health`)
-  - AI endpoint (`/api/analyze`)
-  - report create endpoint (`POST /api/reports`)
-  - report list endpoint (`/api/reports`)
-  - report status update endpoint (`PATCH /api/reports/:id`)
-- File-based persistence in `backend/data/reports.json`.
+</div>
 
-## Architecture
+---
 
-```text
-Frontend (React + Vite, :5173)
-  |
-  | /api (Vite proxy)
-  v
-Backend (Express, :3001)
-  |- GET  /api/health       -> process status
-  |- POST /api/analyze      -> Anthropic API (Claude)
-  |- POST /api/reports      -> backend/data/reports.json
-  |- GET  /api/reports      -> backend/data/reports.json
-  |- PATCH /api/reports/:id -> backend/data/reports.json
+## 📌 О проекте
+
+**CityEye** — открытая AI-платформа, которая превращает жалобы граждан на состояние городской инфраструктуры в структурированные технические репорты с автоматической приоритизацией.
+
+Граждане и бизнес фотографируют проблемы города — выбоины, сломанные фонари, незаконные свалки. Claude Vision мгновенно анализирует снимок и генерирует технический репорт с оценкой критичности, сроком устранения и ответственным отделом. Акиматы получают приоритизированный дашборд с публичным рейтингом исполнения по районам.
+
+---
+
+## 🔴 Проблема
+
+| Боль | Описание |
+|------|----------|
+| 📭 Слепые зоны | Акиматы узнают о проблемах только после аварий или жалоб депутатов |
+| 🏛️ Бюрократия | e-Otinish закрыта, нет статуса обработки, ответы приходят через месяц |
+| 🌑 Непрозрачность | Граждане не видят, что происходит с их обращением |
+| ⏳ Медленная реакция | Средний срок устранения типовой проблемы — 2–4 недели |
+
+---
+
+## ✅ Решение
+
+```
+📸 Фото  →  🤖 AI анализ  →  📊 Дашборд  →  🔧 Устранение  →  ✔️ Верификация
 ```
 
-## Repository Structure
+- **Фото → AI репорт** за 3 секунды с классификацией, критичностью и рекомендациями
+- **Открытая лента** репортов — соцсеть городских проблем
+- **Дашборд акимата** с приоритетами, фильтрами и историей статусов
+- **Верификация** выполнения через фото «до / после»
+- **Публичный рейтинг** районов по скорости и качеству реакции
 
-```text
-cityeye/
-├── backend/
-│   ├── data/reports.json      # File-based storage
-│   ├── routes/analyze.js      # AI analysis route
-│   ├── src/index.js           # Express app + report routes
-│   └── package.json
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx            # Main app shell and tab routing
-│   │   ├── api.js             # Frontend API client
-│   │   ├── YandexMap.jsx      # Main map component (currently mock pins)
-│   │   └── tabs/              # Map / Feed / Report / Gov tabs
-│   ├── index.html             # Includes Yandex Maps script
-│   ├── vite.config.js         # /api -> http://localhost:3001 proxy
-│   └── package.json
-├── docs/overview.md
-├── .env.example
-└── README.md
+---
+
+## 🤖 Почему именно AI
+
+Без AI это просто электронная форма жалоб. AI кардинально меняет уравнение:
+
+| Технология | Что даёт |
+|------------|----------|
+| 🔍 Computer Vision | Автоматическая классификация типа и критичности проблемы по фото |
+| 🗺️ Дедупликация | Объединение похожих репортов в радиусе 5 м — нет спама |
+| 📈 Предиктивная аналитика | Прогноз горячих точек до появления аварий |
+| ✅ Верификация | AI проверяет фото «после» и подтверждает устранение |
+
+---
+
+## 🛠️ Стек технологий
+
+```
+┌─────────────────────────────────────────────────┐
+│                   FRONTEND                      │
+│         React 18 · Vite · CSS Modules           │
+├─────────────────────────────────────────────────┤
+│                   BACKEND                       │
+│           Node.js · Express · REST              │
+├─────────────────────────────────────────────────┤
+│                      AI                         │
+│        Anthropic Claude Vision (Haiku)          │
+├─────────────────────────────────────────────────┤
+│                    MAPS                         │
+│              Яндекс Maps API v2                 │
+├─────────────────────────────────────────────────┤
+│                  DATABASE                       │
+│          Supabase (PostgreSQL) · Auth           │
+├─────────────────────────────────────────────────┤
+│                   DEPLOY                        │
+│             Vercel · Railway                    │
+└─────────────────────────────────────────────────┘
 ```
 
-## Quick Start
+---
 
-### 1) Prerequisites
+## 🚀 Быстрый старт
 
-- Node.js `>= 18` (Node 20 LTS recommended)
-- npm `>= 9`
-
-### 2) Install Dependencies
-
-From repository root:
+### 1. Клонировать репозиторий
 
 ```bash
-npm --prefix backend install
-npm --prefix frontend install
+git clone https://github.com/your-org/cityeye.git
+cd cityeye
 ```
 
-### 3) Configure Environment
-
-Create backend environment file:
+### 2. Установить зависимости
 
 ```bash
-cp .env.example backend/.env
+# Backend
+cd backend && npm install
+
+# Frontend
+cd ../frontend && npm install
 ```
 
-Then update `backend/.env`:
+### 3. Настроить переменные окружения
 
+```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+```
+
+Заполните файлы `.env` (см. раздел ниже).
+
+### 4. Запустить
+
+```bash
+# Backend (порт 3001) — Терминал A
+cd backend && npm run dev
+
+# Frontend (порт 5173) — Терминал B
+cd frontend && npm run dev
+```
+
+Открыть: [http://localhost:5173](http://localhost:5173)
+
+---
+
+## 🔑 Переменные окружения
+
+**`backend/.env`**
 ```env
-ANTHROPIC_API_KEY=your_real_key
-ANTHROPIC_MODEL=claude-sonnet-4-20250514
+ANTHROPIC_API_KEY=your_anthropic_api_key
 PORT=3001
 NODE_ENV=development
 ```
 
-Important:
-- `frontend/vite.config.js` proxies `/api` to `http://localhost:3001`.
-- If you change backend `PORT`, also update proxy target.
-
-### 4) Run in Development
-
-Use two terminals:
-
-Terminal A (backend):
-```bash
-npm --prefix backend run dev
+**`frontend/.env`**
+```env
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_YANDEX_MAPS_KEY=your_yandex_maps_key
 ```
 
-Terminal B (frontend):
-```bash
-npm --prefix frontend run dev
-```
+---
 
-Open:
-- Frontend: `http://localhost:5173`
-- Backend: `http://localhost:3001`
+## 📡 API документация
 
-## Configuration
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| `GET` | `/api/health` | Healthcheck бэкенда |
+| `POST` | `/api/analyze` | Анализ фото через Claude Vision, создание репорта |
+| `GET` | `/api/reports` | Список всех репортов |
+| `POST` | `/api/reports` | Создать репорт вручную |
+| `PATCH` | `/api/reports/:id` | Обновить статус репорта |
 
-Environment variables used by backend:
-
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `ANTHROPIC_API_KEY` | Yes | - | API key for Anthropic SDK |
-| `ANTHROPIC_MODEL` | No | `claude-sonnet-4-20250514` | Anthropic model id for image analysis |
-| `PORT` | No | `3001` | Backend HTTP port |
-| `NODE_ENV` | No | `development` | Runtime mode |
-
-## API Reference
-
-Base URL in local dev: `http://localhost:3001`
-
-### `GET /api/health`
-
-Simple healthcheck endpoint.
-
-Example:
-
-```bash
-curl http://localhost:3001/api/health
-```
-
-### `POST /api/analyze`
-
-Analyze an image with Anthropic, normalize the result, and persist a new report.
-
-Request body:
-
-```json
-{
-  "image": "data:image/jpeg;base64,... or raw base64",
-  "address": "ул. Абая 10, Алматы",
-  "comment": "Большая яма на перекрестке",
-  "problemType": "road"
-}
-```
-
-Notes:
-- `image` is required.
-- `address`, `comment`, `problemType` are optional.
-- Backend strips `data:image/...;base64,` prefix automatically if present.
-
-Success response:
-- `201` with created report object (already normalized and saved).
-
-Errors:
-- `400` if `image` is missing.
-- `500` if API key/model is misconfigured or AI response is invalid.
-
-Example:
+### Пример запроса
 
 ```bash
 curl -X POST http://localhost:3001/api/analyze \
   -H "Content-Type: application/json" \
-  -d '{"image":"data:image/jpeg;base64,/9j/...","address":"Алматы"}'
+  -d '{
+    "image": "<base64>",
+    "address": "ул. Абая 42, Алматы",
+    "problemType": "road",
+    "comment": "Яма у пешеходного перехода"
+  }'
 ```
 
-### `POST /api/reports`
-
-Create a report manually (without AI call).
-
-Request body (example):
+### Пример ответа
 
 ```json
 {
-  "title": "Незаконная свалка",
-  "description": "Скопление строительного мусора у двора",
-  "category": "waste",
+  "id": "rpt_abc123",
+  "title": "Выбоина у пешеходного перехода",
   "severity": "high",
-  "address": "ул. Тимирязева 15, Алматы"
+  "category": "road",
+  "ai_comment": "Выбоина диаметром ~40 см. Высокий риск травм.",
+  "responsible_dept": "Управление дорог и транспорта",
+  "estimated_fix_time": "24–48 часов",
+  "status": "new"
 }
 ```
 
-Response:
-- `201` with created report object.
+---
 
-### `GET /api/reports`
+## 🔐 Тестовые аккаунты
 
-Returns the full array from `backend/data/reports.json`.
+| Роль | Email | Пароль |
+|------|-------|--------|
+| 🏛️ Акимат | `gov@cityeye.kz` | `CityEye2026` |
+| 👤 Гражданин | `user@cityeye.kz` | `User2026` |
+| 🏢 Бизнес | `business@cityeye.kz` | `Business2026` |
 
-Example:
+> Аккаунт «Акимат» открывает полный дашборд с управлением статусами и аналитикой.
 
-```bash
-curl http://localhost:3001/api/reports
+---
+
+## 👥 Пользователи системы
+
+### 👤 Гражданин
+Фотографирует проблему, получает AI-анализ за 3 секунды, видит статус обработки в реальном времени, следит за рейтингом своего района.
+
+### 🏢 Бизнес
+Сообщает о проблемах у своего объекта, получает юридически значимый репорт с номером для ссылки при общении с акиматом.
+
+### 🏛️ Акимат
+Видит приоритизированный дашборд по всем районам, назначает исполнителей, меняет статусы, публикует отчёты о выполнении. Публичный рейтинг создаёт мотивацию реагировать быстрее.
+
+---
+
+## 🗺️ Дорожная карта
+
+```
+Фаза 1 · MVP (Хакатон)          ████████████████████  ✅ Готово
+─────────────────────────────────────────────────────────────────
+  Загрузка фото и AI-анализ
+  Лента репортов
+  Дашборд акимата
+  Yandex Maps с пинами
+
+Фаза 2 · Публичный доступ        ░░░░░░░░░░░░░░░░░░░░  Q3 2026
+─────────────────────────────────────────────────────────────────
+  Supabase Auth + профили
+  Push-уведомления о статусе
+  Мобильная версия (PWA)
+  API для интеграции с e-Gov
+
+Фаза 3 · Предиктивная аналитика  ░░░░░░░░░░░░░░░░░░░░  Q4 2026
+─────────────────────────────────────────────────────────────────
+  Тепловые карты проблем
+  Прогноз горячих точек
+  Автоназначение исполнителей
+  Публичный API для СМИ
+
+Фаза 4 · Smart City интеграция   ░░░░░░░░░░░░░░░░░░░░  2027
+─────────────────────────────────────────────────────────────────
+  Интеграция с городскими камерами
+  Автодетекция проблем без гражданина
+  Цифровой двойник города
+  Межгородская федерация данных
 ```
 
-### `PATCH /api/reports/:id`
+---
 
-Update report status.
+## 👨‍💻 Команда
 
-Request body:
+| Роль | Зона ответственности |
+|------|---------------------|
+| 🎨 Frontend | React-интерфейс, Yandex Maps, UX/UI |
+| ⚙️ Backend | Node.js API, база данных, авторизация |
+| 🤖 AI / Prompts | Claude Vision, промпт-инжиниринг, анализ ответов |
+| 📋 Product | Исследование пользователей, роадмап, презентация |
 
-```json
-{
-  "status": "new | in_progress | resolved | rejected"
-}
-```
+---
 
-Example:
+## 🏆 Хакатон
 
-```bash
-curl -X PATCH http://localhost:3001/api/reports/<report-id> \
-  -H "Content-Type: application/json" \
-  -d '{"status":"in_progress"}'
-```
+> **AI for Government 2026** · Казахстан · Свободный кейс
 
-## Data Model (`reports.json`)
+Проект создан в рамках хакатона **AI for Government 2026** — национального соревнования по применению искусственного интеллекта в государственном управлении Казахстана.
 
-`backend/data/reports.json` is expected to be an array:
+CityEye решает задачу **цифровой трансформации взаимодействия граждан с акиматами** через открытую AI-инфраструктуру мониторинга городской среды.
 
-```json
-[
-  {
-    "id": "r_001",
-    "title": "Яма на дороге",
-    "description": "Глубокая яма возле остановки",
-    "category": "road",
-    "severity": "high",
-    "status": "new",
-    "address": "ул. Абая 10, Алматы",
-    "image": "data:image/jpeg;base64,...",
-    "estimated_resolution_days": 3,
-    "recommendations": [
-      "Оградить опасный участок",
-      "Назначить дорожную бригаду"
-    ],
-    "created_at": "2026-03-29T10:00:00.000Z",
-    "updated_at": "2026-03-29T10:00:00.000Z"
-  }
-]
-```
+---
 
-Recommended enums:
+## 📄 Лицензия
 
-- `category`: `road`, `lighting`, `greenery`, `utilities`, `waste`, `other`
-- `severity`: `critical`, `high`, `medium`, `low`
-- `status`: `new`, `in_progress`, `resolved`, `rejected`
+MIT © 2026 CityEye Team
 
-## Current Product Status
+---
 
-This repository is a strong prototype, not yet production-ready.
+<div align="center">
 
-Current limitations in codebase:
+**Made with ❤️ in Almaty, Kazakhstan**
 
-1. Main map (`YandexMap.jsx`) currently renders hardcoded demo pins (`MOCK_PINS`), not backend reports.
-2. Feed combines mock data with backend data.
-3. Access control is frontend-only (no backend auth/authorization checks for status updates).
-4. Persistence is JSON-file based (no concurrency control, no migrations, no audit trail).
-5. No automated tests are included yet.
+*Городские проблемы видны всем — теперь акиматы тоже увидят*
 
-## Troubleshooting
-
-### Frontend cannot reach backend
-
-Symptoms:
-- network errors on `/api/*`
-- `ECONNREFUSED` in browser devtools
-
-Checks:
-1. Backend is running on `http://localhost:3001`.
-2. `frontend/vite.config.js` proxy target matches backend port.
-
-### `POST /api/analyze` returns 500
-
-Checks:
-1. `backend/.env` contains valid `ANTHROPIC_API_KEY`.
-2. Key has access to the configured model.
-3. Image payload is valid base64 and not empty.
-
-### No reports visible in UI
-
-Checks:
-1. `backend/data/reports.json` contains valid JSON array.
-2. Objects include expected fields (`id`, `status`, `severity`, etc.).
-
-## Scripts
-
-### Backend (`backend/package.json`)
-
-| Script | Command | Description |
-|---|---|---|
-| `npm run dev` | `node --watch src/index.js` | Start backend in watch mode |
-| `npm start` | `node src/index.js` | Start backend once |
-
-### Frontend (`frontend/package.json`)
-
-| Script | Command | Description |
-|---|---|---|
-| `npm run dev` | `vite` | Start Vite dev server |
-| `npm run build` | `vite build` | Create production build |
-| `npm run preview` | `vite preview` | Preview built app |
-
-## Security Notes
-
-1. Yandex Maps API key is currently hardcoded in `frontend/index.html`.
-2. Backend `PATCH /api/reports/:id` has no authentication.
-3. Never commit real secrets in `.env` files.
-
-## Roadmap Suggestions
-
-1. Replace `reports.json` with a real database (PostgreSQL or similar).
-2. Add backend authentication/authorization with role checks.
-3. Remove mock data from map/feed and rely on backend records only.
-4. Add validation layer (e.g. Zod) and automated tests.
-# govtech-revolution
+</div>

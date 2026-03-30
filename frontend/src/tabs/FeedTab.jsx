@@ -2,17 +2,17 @@ import { useState } from 'react';
 
 /* ── Configs ── */
 const SEV = {
-  critical: { label: 'Критично', color: '#EF4444', stripe: '#EF4444', bg: 'rgba(239,68,68,0.14)' },
-  high:     { label: 'Высокий',  color: '#F97316', stripe: '#F97316', bg: 'rgba(249,115,22,0.14)' },
-  medium:   { label: 'Средний',  color: '#3B82F6', stripe: '#3B82F6', bg: 'rgba(59,130,246,0.14)' },
-  low:      { label: 'Низкий',   color: '#22C55E', stripe: '#22C55E', bg: 'rgba(34,197,94,0.14)' },
+  critical: { label: 'Критично', color: '#EF4444', stripe: '#EF4444', bg: 'rgba(239,68,68,0.1)' },
+  high:     { label: 'Высокий',  color: '#F97316', stripe: '#F97316', bg: 'rgba(249,115,22,0.1)' },
+  medium:   { label: 'Средний',  color: '#3B82F6', stripe: '#3B82F6', bg: 'rgba(59,130,246,0.1)' },
+  low:      { label: 'Низкий',   color: '#22C55E', stripe: '#22C55E', bg: 'rgba(34,197,94,0.1)' },
 };
 
 const ST = {
-  new:         { label: 'Новый',    color: '#3B82F6', bg: 'rgba(59,130,246,0.14)' },
-  in_progress: { label: 'В работе', color: '#F97316', bg: 'rgba(249,115,22,0.14)' },
-  resolved:    { label: 'Решено',   color: '#22C55E', bg: 'rgba(34,197,94,0.14)' },
-  rejected:    { label: 'Отклонён', color: '#6B7280', bg: 'rgba(107,114,128,0.14)' },
+  new:         { label: 'Новый',    color: '#3B82F6', bg: 'rgba(59,130,246,0.1)' },
+  in_progress: { label: 'В работе', color: '#F97316', bg: 'rgba(249,115,22,0.1)' },
+  resolved:    { label: 'Решено',   color: '#16a34a', bg: 'rgba(22,163,74,0.1)' },
+  rejected:    { label: 'Отклонён', color: '#6B7280', bg: 'rgba(107,114,128,0.1)' },
 };
 
 const CAT_COLOR = {
@@ -61,10 +61,7 @@ const MOCK = [
 
 /* ── SVG Icons ── */
 function Icon({ n, size = 16, color = 'currentColor', fill = 'none' }) {
-  const base = {
-    width: size, height: size, flexShrink: 0,
-    display: 'block',
-  };
+  const base = { width: size, height: size, flexShrink: 0, display: 'block' };
   const sp = { stroke: color, fill, strokeWidth: '2', strokeLinecap: 'round', strokeLinejoin: 'round' };
   const icons = {
     feed:     <><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></>,
@@ -86,6 +83,7 @@ function Icon({ n, size = 16, color = 'currentColor', fill = 'none' }) {
     eye:      <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>,
     plus:     <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
     check:    <polyline points="20 6 9 17 4 12"/>,
+    photo:    <><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></>,
   };
   return (
     <svg style={base} viewBox="0 0 24 24" {...sp}>
@@ -124,7 +122,7 @@ const NAV = [
 ];
 
 const FILTER_OPTS = [
-  { id: 'all',      label: 'Все',      color: 'rgba(255,255,255,0.5)' },
+  { id: 'all',      label: 'Все',      color: '#0f172a' },
   { id: 'critical', label: 'Критично', color: '#EF4444' },
   { id: 'high',     label: 'Высокий',  color: '#F97316' },
   { id: 'medium',   label: 'Средний',  color: '#3B82F6' },
@@ -168,15 +166,15 @@ export default function FeedTab({ reports = [], onTabChange }) {
   return (
     <div style={{
       display: 'flex', height: '100vh', overflow: 'hidden',
-      background: '#0f110d',
+      background: '#f8f9f6',
       fontFamily: "'DM Sans', system-ui, sans-serif",
     }}>
 
       {/* ── Left Sidebar ── */}
       <aside style={{
         width: 240, flexShrink: 0,
-        background: '#111310',
-        borderRight: '1px solid rgba(255,255,255,0.06)',
+        background: '#ffffff',
+        borderRight: '1px solid rgba(0,0,0,0.08)',
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
       }}>
@@ -184,22 +182,22 @@ export default function FeedTab({ reports = [], onTabChange }) {
         {/* Logo */}
         <div style={{
           padding: '22px 18px 18px',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          borderBottom: '1px solid rgba(0,0,0,0.06)',
           flexShrink: 0,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
-              width: 36, height: 36, borderRadius: 10, background: '#c8f060',
+              width: 36, height: 36, borderRadius: 10, background: '#0f0f0f',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <Icon n="eye" size={18} color="#0f110d" />
+              <Icon n="eye" size={18} color="#fff" />
             </div>
             <div>
               <div style={{
                 fontFamily: '"Playfair Display", Georgia, serif',
-                fontWeight: 800, fontSize: '0.95rem', color: '#fff', lineHeight: 1.2,
+                fontWeight: 800, fontSize: '0.95rem', color: '#0f172a', lineHeight: 1.2,
               }}>CityEye</div>
-              <div style={{ fontSize: 8, color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>
+              <div style={{ fontSize: 8, color: '#94a3b8', letterSpacing: '2px', textTransform: 'uppercase' }}>
                 Urban AI Monitor
               </div>
             </div>
@@ -208,7 +206,7 @@ export default function FeedTab({ reports = [], onTabChange }) {
 
         {/* Nav */}
         <nav style={{ padding: '14px 10px 0', flexShrink: 0 }}>
-          <div style={{ fontSize: 9, color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 700, padding: '0 8px', marginBottom: 8 }}>
+          <div style={{ fontSize: 9, color: '#94a3b8', letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 700, padding: '0 8px', marginBottom: 8 }}>
             Навигация
           </div>
           {NAV.map(item => {
@@ -220,15 +218,15 @@ export default function FeedTab({ reports = [], onTabChange }) {
                 style={{
                   display: 'flex', alignItems: 'center', gap: 10,
                   width: '100%', padding: '9px 10px', borderRadius: 8,
-                  background: active ? 'rgba(200,240,96,0.1)' : 'transparent',
-                  color: active ? '#c8f060' : 'rgba(255,255,255,0.35)',
+                  background: active ? 'rgba(0,0,0,0.06)' : 'transparent',
+                  color: active ? '#0f172a' : '#94a3b8',
                   border: 'none', cursor: 'pointer',
                   fontSize: '0.845rem', fontWeight: active ? 600 : 400,
                   textAlign: 'left', transition: 'background 0.15s, color 0.15s',
                   marginBottom: 2,
                 }}
               >
-                <Icon n={item.icon} size={16} color={active ? '#c8f060' : 'rgba(255,255,255,0.3)'} />
+                <Icon n={item.icon} size={16} color={active ? '#0f172a' : '#94a3b8'} />
                 {item.label}
               </button>
             );
@@ -237,7 +235,7 @@ export default function FeedTab({ reports = [], onTabChange }) {
 
         {/* Filters */}
         <div style={{ padding: '20px 10px 0', flex: 1, overflow: 'hidden' }}>
-          <div style={{ fontSize: 9, color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 700, padding: '0 8px', marginBottom: 8 }}>
+          <div style={{ fontSize: 9, color: '#94a3b8', letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 700, padding: '0 8px', marginBottom: 8 }}>
             Фильтр
           </div>
           {FILTER_OPTS.map(f => {
@@ -249,8 +247,8 @@ export default function FeedTab({ reports = [], onTabChange }) {
                 style={{
                   display: 'flex', alignItems: 'center', gap: 9,
                   width: '100%', padding: '8px 10px', borderRadius: 8,
-                  background: active ? 'rgba(255,255,255,0.05)' : 'transparent',
-                  color: active ? '#fff' : 'rgba(255,255,255,0.35)',
+                  background: active ? 'rgba(0,0,0,0.05)' : 'transparent',
+                  color: active ? '#0f172a' : '#94a3b8',
                   border: 'none', cursor: 'pointer',
                   fontSize: '0.84rem', fontWeight: active ? 600 : 400,
                   textAlign: 'left', marginBottom: 2,
@@ -259,11 +257,11 @@ export default function FeedTab({ reports = [], onTabChange }) {
               >
                 <div style={{
                   width: 7, height: 7, borderRadius: '50%',
-                  background: active ? f.color : 'rgba(255,255,255,0.2)',
+                  background: active ? f.color : 'rgba(0,0,0,0.15)',
                   flexShrink: 0, transition: 'background 0.15s',
                 }} />
                 {f.label}
-                <span style={{ marginLeft: 'auto', fontSize: '0.72rem', color: 'rgba(255,255,255,0.2)' }}>
+                <span style={{ marginLeft: 'auto', fontSize: '0.72rem', color: '#94a3b8' }}>
                   {f.id === 'all'
                     ? allReports.length
                     : f.id === 'resolved'
@@ -279,36 +277,36 @@ export default function FeedTab({ reports = [], onTabChange }) {
         <div style={{
           margin: '12px 10px',
           padding: '12px 12px',
-          background: 'rgba(255,255,255,0.04)',
-          border: '1px solid rgba(255,255,255,0.07)',
+          background: 'rgba(0,0,0,0.03)',
+          border: '1px solid rgba(0,0,0,0.07)',
           borderRadius: 12,
           flexShrink: 0,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
               width: 32, height: 32, borderRadius: '50%',
-              background: 'rgba(200,240,96,0.15)',
+              background: 'rgba(0,0,0,0.07)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0,
             }}>
-              <Icon n="user" size={16} color="#c8f060" />
+              <Icon n="user" size={16} color="#64748b" />
             </div>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#fff', lineHeight: 1.2 }}>Гражданин</div>
-              <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#0f172a', lineHeight: 1.2 }}>Гражданин</div>
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 Алматы
               </div>
             </div>
             <button
               onClick={() => nav('report')}
               style={{
-                marginLeft: 'auto', background: '#c8f060', border: 'none',
+                marginLeft: 'auto', background: '#0f0f0f', border: 'none',
                 borderRadius: 7, width: 28, height: 28,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer', flexShrink: 0,
               }}
             >
-              <Icon n="plus" size={14} color="#0f110d" />
+              <Icon n="plus" size={14} color="#fff" />
             </button>
           </div>
         </div>
@@ -320,15 +318,16 @@ export default function FeedTab({ reports = [], onTabChange }) {
         {/* Top bar */}
         <div style={{
           padding: '20px 28px 16px',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          borderBottom: '1px solid rgba(0,0,0,0.08)',
           flexShrink: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: '#ffffff',
         }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700, color: '#fff', lineHeight: 1 }}>
+            <h1 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700, color: '#0f172a', lineHeight: 1 }}>
               Лента Алматы
             </h1>
-            <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.3)' }}>
+            <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: '#64748b' }}>
               {filtered.length} репортов · обновлено только что
             </p>
           </div>
@@ -336,30 +335,29 @@ export default function FeedTab({ reports = [], onTabChange }) {
             onClick={() => nav('report')}
             style={{
               display: 'flex', alignItems: 'center', gap: 7,
-              background: '#c8f060', color: '#0f110d',
+              background: '#0f0f0f', color: '#fff',
               border: 'none', borderRadius: 10,
               padding: '9px 16px', fontSize: '0.84rem', fontWeight: 700,
               cursor: 'pointer',
             }}
           >
-            <Icon n="plus" size={14} color="#0f110d" />
+            <Icon n="plus" size={14} color="#fff" />
             Сообщить
           </button>
         </div>
 
         {/* Cards list */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '18px 28px 28px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '18px 28px 28px', background: '#f8f9f6' }}>
           {filtered.length === 0 ? (
             <div style={{
               display: 'flex', flexDirection: 'column', alignItems: 'center',
               justifyContent: 'center', paddingTop: 80,
-              color: 'rgba(255,255,255,0.2)',
             }}>
-              <Icon n="info" size={40} color="rgba(255,255,255,0.1)" />
-              <div style={{ marginTop: 14, fontSize: '0.9rem', fontWeight: 500, color: 'rgba(255,255,255,0.25)' }}>
+              <Icon n="info" size={40} color="rgba(0,0,0,0.1)" />
+              <div style={{ marginTop: 14, fontSize: '0.9rem', fontWeight: 500, color: '#64748b' }}>
                 Репорты не найдены
               </div>
-              <div style={{ marginTop: 4, fontSize: '0.8rem', color: 'rgba(255,255,255,0.15)' }}>
+              <div style={{ marginTop: 4, fontSize: '0.8rem', color: '#94a3b8' }}>
                 Попробуйте другой фильтр
               </div>
             </div>
@@ -399,18 +397,17 @@ function ReportCard({ r, liked, onLike, shareLabel, onShare, onPublish }) {
   return (
     <div style={{
       position: 'relative',
-      background: '#161a12',
+      background: '#ffffff',
       borderRadius: 16,
-      border: '1px solid rgba(255,255,255,0.07)',
+      border: '1px solid #eee',
+      boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
       overflow: 'hidden',
       display: 'flex',
-      transition: 'border-color 0.2s',
     }}>
       {/* Left stripe */}
       <div style={{
-        width: 3, flexShrink: 0,
+        width: 4, flexShrink: 0,
         background: stripeColor,
-        opacity: 0.9,
       }} />
 
       {/* Card body */}
@@ -419,8 +416,8 @@ function ReportCard({ r, liked, onLike, shareLabel, onShare, onPublish }) {
         {/* Photo / icon */}
         <div style={{
           width: 110, height: 110, flexShrink: 0, borderRadius: 12,
-          background: 'rgba(255,255,255,0.04)',
-          border: '1px solid rgba(255,255,255,0.08)',
+          background: 'rgba(0,0,0,0.04)',
+          border: '1px solid rgba(0,0,0,0.08)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           overflow: 'hidden',
         }}>
@@ -429,7 +426,7 @@ function ReportCard({ r, liked, onLike, shareLabel, onShare, onPublish }) {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
               <Icon n={catIcon} size={28} color={catColor} />
-              <span style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: 1 }}>
+              <span style={{ fontSize: '0.6rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1 }}>
                 Фото
               </span>
             </div>
@@ -458,22 +455,22 @@ function ReportCard({ r, liked, onLike, shareLabel, onShare, onPublish }) {
             <span style={{
               marginLeft: 'auto',
               display: 'flex', alignItems: 'center', gap: 4,
-              color: 'rgba(255,255,255,0.25)', fontSize: '0.72rem',
+              color: '#94a3b8', fontSize: '0.72rem',
             }}>
-              <Icon n="clock" size={11} color="rgba(255,255,255,0.25)" />
+              <Icon n="clock" size={11} color="#94a3b8" />
               {timeAgo(r.created_at)}
             </span>
           </div>
 
           {/* Title */}
-          <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#fff', lineHeight: 1.3 }}>
+          <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#0f172a', lineHeight: 1.3 }}>
             {r.type || r.title || 'Городская проблема'}
           </div>
 
           {/* AI comment */}
           <p style={{
             margin: 0, fontSize: '0.8rem',
-            color: 'rgba(255,255,255,0.45)',
+            color: '#64748b',
             lineHeight: 1.6,
             display: '-webkit-box',
             WebkitLineClamp: 2,
@@ -485,8 +482,8 @@ function ReportCard({ r, liked, onLike, shareLabel, onShare, onPublish }) {
 
           {/* Address */}
           {r.address && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'rgba(255,255,255,0.3)', fontSize: '0.75rem' }}>
-              <Icon n="pin" size={11} color="rgba(255,255,255,0.3)" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#94a3b8', fontSize: '0.75rem' }}>
+              <Icon n="pin" size={11} color="#94a3b8" />
               {r.address}
             </div>
           )}
@@ -495,13 +492,13 @@ function ReportCard({ r, liked, onLike, shareLabel, onShare, onPublish }) {
 
       {/* Footer */}
       <div style={{
-        borderTop: '1px solid rgba(255,255,255,0.05)',
-        padding: '9px 16px 9px 19px',
+        borderTop: '1px solid rgba(0,0,0,0.06)',
+        padding: '9px 16px 9px 20px',
         display: 'flex', alignItems: 'center', gap: 4,
       }}>
         {/* Like */}
         <FooterBtn
-          icon={<Icon n="heart" size={13} color={liked ? '#EF4444' : 'rgba(255,255,255,0.3)'} fill={liked ? '#EF4444' : 'none'} />}
+          icon={<Icon n="heart" size={13} color={liked ? '#EF4444' : '#94a3b8'} fill={liked ? '#EF4444' : 'none'} />}
           label={liked ? likes + 1 : likes}
           active={liked}
           activeColor="#EF4444"
@@ -510,14 +507,14 @@ function ReportCard({ r, liked, onLike, shareLabel, onShare, onPublish }) {
 
         {/* Comments */}
         <FooterBtn
-          icon={<Icon n="msg" size={13} color="rgba(255,255,255,0.3)" />}
+          icon={<Icon n="msg" size={13} color="#94a3b8" />}
           label={comments}
           onClick={() => {}}
         />
 
         {/* Share */}
         <FooterBtn
-          icon={<Icon n="share" size={13} color={shareLabel ? '#22C55E' : 'rgba(255,255,255,0.3)'} />}
+          icon={<Icon n="share" size={13} color={shareLabel ? '#22C55E' : '#94a3b8'} />}
           label={shareLabel ?? 'Поделиться'}
           active={!!shareLabel}
           activeColor="#22C55E"
@@ -532,14 +529,14 @@ function ReportCard({ r, liked, onLike, shareLabel, onShare, onPublish }) {
           onClick={onPublish}
           style={{
             display: 'flex', alignItems: 'center', gap: 6,
-            background: 'rgba(200,240,96,0.1)',
-            color: '#c8f060',
-            border: '1px solid rgba(200,240,96,0.2)',
+            background: 'rgba(0,0,0,0.05)',
+            color: '#0f172a',
+            border: '1px solid rgba(0,0,0,0.1)',
             borderRadius: 8, padding: '5px 12px',
             fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
           }}
         >
-          <Icon n="plus" size={12} color="#c8f060" />
+          <Icon n="plus" size={12} color="#0f172a" />
           Опубликовать
         </button>
       </div>
@@ -554,7 +551,7 @@ function FooterBtn({ icon, label, onClick, active, activeColor }) {
       style={{
         display: 'flex', alignItems: 'center', gap: 5,
         background: 'transparent', border: 'none',
-        color: active ? activeColor : 'rgba(255,255,255,0.3)',
+        color: active ? activeColor : '#94a3b8',
         padding: '4px 8px', borderRadius: 6,
         fontSize: '0.75rem', fontWeight: 500, cursor: 'pointer',
         transition: 'color 0.15s',
