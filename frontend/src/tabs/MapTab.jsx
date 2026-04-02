@@ -121,7 +121,7 @@ export default function MapTab({ reports }) {
                   <div style={{ minWidth: 200, fontFamily: 'system-ui, sans-serif', padding: 2 }}>
                     <strong style={{ fontSize: '0.95rem', color: '#0F172A' }}>{r.title}</strong>
                     <div style={{ fontSize: '0.8rem', color: '#64748B', marginTop: 2 }}>
-                      {CATEGORY_LABEL[r.category] ?? r.category}
+                      {CATEGORY_LABEL[r.type] ?? r.type}
                     </div>
                     {r.address && (
                       <div style={{ fontSize: '0.8rem', color: '#64748B', marginTop: 2 }}>📍 {r.address}</div>

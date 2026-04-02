@@ -1,8 +1,16 @@
 import { useState } from 'react';
+import { buildBusinessUser, buildGovernmentUser } from './lib/userProfile';
 
 const ACCOUNTS = {
   'gov@cityeye.kz':  { password: 'CityEye2026', role: 'government' },
   'user@cityeye.kz': { password: 'User2026',    role: 'citizen' },
+  'business@cityeye.kz': { password: 'Business2026', role: 'business' },
+};
+
+const ROLE_LABEL = {
+  citizen: 'Гражданин',
+  government: 'Гос. служащий',
+  business: 'Бизнес',
 };
 
 export default function AuthModal({ onClose, onLogin }) {
@@ -20,16 +28,21 @@ export default function AuthModal({ onClose, onLogin }) {
 
   function handleLogin(e) {
     e.preventDefault();
-    const acc = ACCOUNTS[email.trim().toLowerCase()];
+    const normalizedEmail = email.trim().toLowerCase();
+    const acc = ACCOUNTS[normalizedEmail];
     if (!acc || acc.password !== password) {
       setError('Неверный email или пароль');
       return;
     }
-    const user = {
-      email: email.trim().toLowerCase(),
-      role: acc.role,
-      name: acc.role === 'government' ? 'Акимат Алматы' : 'Гражданин',
-    };
+    const user = acc.role === 'government'
+      ? buildGovernmentUser(normalizedEmail)
+      : acc.role === 'business'
+        ? buildBusinessUser(normalizedEmail)
+        : {
+            email: normalizedEmail,
+            role: 'citizen',
+            name: 'Гражданин',
+          };
     localStorage.setItem('cityeye_user', JSON.stringify(user));
     onLogin(user);
     onClose();
@@ -50,7 +63,7 @@ export default function AuthModal({ onClose, onLogin }) {
         background: '#fff',
         borderRadius: 20,
         padding: '32px 28px',
-        width: 420, maxWidth: '92vw',
+        width: 500, maxWidth: '92vw',
         boxShadow: '0 24px 64px rgba(0,0,0,0.18)',
         position: 'relative',
       }}>
@@ -77,7 +90,7 @@ export default function AuthModal({ onClose, onLogin }) {
               Выберите тип аккаунта
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
               {/* Гражданин */}
               <RoleCard
                 label="Гражданин"
@@ -106,6 +119,27 @@ export default function AuthModal({ onClose, onLogin }) {
                   </svg>
                 }
               />
+
+              {/* Бизнес */}
+              <RoleCard
+                label="Бизнес"
+                iconColor="#0f766e"
+                iconBg="rgba(15,118,110,0.1)"
+                onClick={() => selectRole('business')}
+                icon={
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none"
+                    stroke="#0f766e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 21h18" />
+                    <path d="M5 21V7l8-4 6 4v14" />
+                    <path d="M9 9h.01" />
+                    <path d="M9 13h.01" />
+                    <path d="M9 17h.01" />
+                    <path d="M15 9h.01" />
+                    <path d="M15 13h.01" />
+                    <path d="M15 17h.01" />
+                  </svg>
+                }
+              />
             </div>
           </>
         ) : (
@@ -125,7 +159,7 @@ export default function AuthModal({ onClose, onLogin }) {
             </button>
 
             <div style={{ fontWeight: 800, fontSize: '1.25rem', color: '#0f0f0f', marginBottom: 4 }}>
-              {role === 'government' ? 'Гос. служащий' : 'Гражданин'}
+              {ROLE_LABEL[role] ?? 'Гражданин'}
             </div>
             <div style={{ fontSize: '0.85rem', color: '#888', marginBottom: 22 }}>
               Введите данные для входа
@@ -194,7 +228,7 @@ function RoleCard({ label, icon, iconBg, onClick }) {
       onMouseLeave={() => setHovered(false)}
       style={{
         border: `2px solid ${hovered ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.08)'}`,
-        borderRadius: 14, padding: '22px 16px',
+        borderRadius: 14, padding: '18px 12px',
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
         background: hovered ? 'rgba(0,0,0,0.03)' : 'rgba(0,0,0,0.01)',
         cursor: 'pointer',
@@ -203,13 +237,13 @@ function RoleCard({ label, icon, iconBg, onClick }) {
       }}
     >
       <div style={{
-        width: 52, height: 52, borderRadius: 14,
+        width: 48, height: 48, borderRadius: 14,
         background: iconBg,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         {icon}
       </div>
-      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f0f0f' }}>{label}</div>
+      <div style={{ fontWeight: 700, fontSize: '0.84rem', color: '#0f0f0f', textAlign: 'center' }}>{label}</div>
     </button>
   );
 }

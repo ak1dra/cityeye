@@ -10,5 +10,8 @@
     "dev:frontend": "npm --prefix frontend run dev",
     "start": "npm --prefix backend run start",
     "build": "npm --prefix frontend run build"
+  },
+  "dependencies": {
+    "framer-motion": "^12.38.0"
   }
 }

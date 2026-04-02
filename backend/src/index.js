@@ -1,7 +1,13 @@
 import 'dotenv/config';
 import express from 'express';
 import analyzeRouter from '../routes/analyze.js';
-import { createReport, readReports, updateReportStatus, VALID_STATUSES } from './reportStore.js';
+import {
+  createReport,
+  readReports,
+  updateReport,
+  VALID_STATUSES,
+  PATCHABLE_REPORT_FIELDS,
+} from './reportStore.js';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -13,6 +19,8 @@ app.get('/api/health', (_req, res) => {
     ok: true,
     timestamp: new Date().toISOString(),
     uptime_seconds: Math.round(process.uptime()),
+    analyze_provider: process.env.ALEM_API_KEY ? 'alem' : 'mock',
+    analyze_model: process.env.ALEM_MODEL || 'qwen3',
   });
 });
 
@@ -47,14 +55,27 @@ app.post('/api/reports', async (req, res) => {
 
 app.patch('/api/reports/:id', async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body ?? {};
+  const payload = req.body ?? {};
+  const hasPatchField = PATCHABLE_REPORT_FIELDS.some(field =>
+    Object.prototype.hasOwnProperty.call(payload, field)
+  );
 
-  if (!status || !VALID_STATUSES.includes(status)) {
+  if (!hasPatchField) {
+    return res.status(400).json({
+      error: `Provide at least one updatable field: ${PATCHABLE_REPORT_FIELDS.join(', ')}`,
+    });
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(payload, 'status')
+    && payload.status
+    && !VALID_STATUSES.includes(String(payload.status).trim().toLowerCase())
+  ) {
     return res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` });
   }
 
   try {
-    const updated = await updateReportStatus(id, status);
+    const updated = await updateReport(id, payload);
     res.json(updated);
   } catch (err) {
     if (err.statusCode) {

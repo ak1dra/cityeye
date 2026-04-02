@@ -1,354 +1,373 @@
 # CityEye — Architecture
 
-> Техническая документация платформы гражданского мониторинга городской инфраструктуры Казахстана
+> Реальная архитектура hackathon MVP без лишних обещаний.
+
+## 1. Архитектурный тезис
+
+CityEye строится вокруг одной сущности: **городской инфраструктурный кейс**, который может быть создан жителем или частным сектором и затем обработан акиматом, бизнесом или обеими сторонами совместно.
+
+Важный архитектурный выбор проекта:
+
+- не разделять "жалобу гражданина" и "внутреннюю задачу исполнителя";
+- не делать отдельные несвязанные кабинеты для акимата и бизнеса;
+- хранить единый `report`, который проходит через маршрутизацию, исполнение, комментарии и фотофиксацию результата.
+
+Это делает систему понятной для демонстрации и масштабируемой для следующей фазы.
 
 ---
 
-## Содержание
-
-1. [Обзор системы](#1-обзор-системы)
-2. [Технический стек](#2-технический-стек)
-3. [Архитектура компонентов](#3-архитектура-компонентов)
-4. [База данных](#4-база-данных)
-5. [API документация](#5-api-документация)
-6. [AI Pipeline](#6-ai-pipeline)
-7. [Безопасность](#7-безопасность)
-8. [Дорожная карта](#8-дорожная-карта)
-
----
-
-## 1. Обзор системы
-
-CityEye решает проблему **реактивного управления городской инфраструктурой** в Казахстане. Акиматы узнают о проблемах только после аварий — CityEye переводит систему в проактивный режим через AI-анализ фотографий от граждан.
-
-### Типы пользователей
-
-| Роль | Доступ | Задача |
-|------|--------|--------|
-| 👤 Гражданин / Бизнес | Лента, Карта, Репорт | Фотографирует проблемы, следит за статусом |
-| 🏛️ Акимат | Полный дашборд | Управляет репортами, меняет статусы |
-| 🏢 Министерство | Аналитика | Мониторинг по всей стране |
-
-### Поток данных
-
-```
-Фото → Anthropic Claude Vision → AI анализ →
-Supabase → Лента / Карта / Дашборд
-```
-
----
-
-## 2. Технический стек
+## 2. Что реально есть в текущем MVP
 
 ### Frontend
-| Технология | Назначение |
-|------------|------------|
-| React 18 + Vite | UI фреймворк и сборщик |
-| CSS Modules | Стилизация компонентов |
-| Supabase JS | Auth + база данных |
-| Яндекс Maps API v2 | Карта с пинами репортов |
-| Recharts | Графики в дашборде акимата |
+
+- `Map` для обзорной визуализации обращений;
+- `Feed` для публичного слоя прозрачности;
+- `ReportTab` для создания обращений;
+- `Dashboard` для акимата;
+- `BusinessDashboard` для частного сектора;
+- `AuthModal` с demo-role login;
+- `CollaborationWidgets` для shared-case timeline и partner comments.
+
+### Data layer
+
+- Supabase PostgreSQL как основной runtime-store для UI;
+- Supabase Storage для фотографий;
+- Supabase Realtime для live-обновления обращений.
 
 ### Backend
-| Технология | Назначение |
-|------------|------------|
-| Node.js + Express | REST API сервер |
-| Anthropic Claude | Vision AI анализ фото |
-| Supabase JS Client | Работа с PostgreSQL |
 
-### Database & Infrastructure
-| Сервис | Назначение |
-|--------|------------|
-| Supabase (PostgreSQL) | Основная база данных |
-| Supabase Auth | Аутентификация и JWT |
-| Supabase Storage | Хранение фотографий |
-| Vercel | Деплой фронтенда |
-| Railway | Деплой бэкенда |
+- `POST /api/analyze` для AI-assisted triage;
+- `GET/POST/PATCH /api/reports` как server-side path и основа для дальнейшего hardening;
+- health endpoint с признаком `alem` или `mock`.
 
----
+### AI mode
 
-## 3. Архитектура компонентов
+- текущий runtime: `qwen3` для AI-assisted normalization и triage;
+- следующий этап: `Qwen 3.5 Vision` для прямого multimodal анализа изображения.
 
-```
-┌──────────────────────────────────────────────────────┐
-│                  FRONTEND (React)                    │
-│                                                      │
-│  ┌────────┐  ┌────────┐  ┌────────┐  ┌──────────┐  │
-│  │ Карта  │  │ Лента  │  │ Репорт │  │  Акимат  │  │
-│  │  Map   │  │  Feed  │  │ Report │  │ Dashboard│  │
-│  └────────┘  └────────┘  └────────┘  └──────────┘  │
-│                                                      │
-│  ┌─────────────────────────────────────────────┐    │
-│  │          AuthModal + Supabase Auth          │    │
-│  └─────────────────────────────────────────────┘    │
-└──────────────────────┬───────────────────────────────┘
-                       │ HTTP / REST
-┌──────────────────────▼───────────────────────────────┐
-│                BACKEND (Node.js)                     │
-│                                                      │
-│  POST  /api/analyze      — AI анализ фото            │
-│  GET   /api/reports      — список репортов           │
-│  POST  /api/reports      — создать репорт            │
-│  PATCH /api/reports/:id  — обновить статус           │
-│  GET   /api/dashboard    — статистика акимата        │
-│  GET   /api/health       — healthcheck               │
-└──────────┬─────────────────────────┬─────────────────┘
-           │                         │
-┌──────────▼──────────┐   ┌──────────▼──────────────────┐
-│   Anthropic Claude  │   │         Supabase             │
-│                     │   │                              │
-│  claude-haiku-4-5   │   │  PostgreSQL  ·  Auth         │
-│  Computer Vision    │   │  Storage     ·  RLS          │
-└─────────────────────┘   └─────────────────────────────┘
-```
+### Collaboration layer
+
+В модель данных уже встроены:
+
+- `reporter_role`
+- `reporter_org_name`
+- `responsible_role`
+- `assigned_org_name`
+- `shared_case`
+- `partner_comment`
+- `completion_image_url`
 
 ---
 
-## 4. База данных
+## 3. High-Level Diagram
 
-### Таблица `profiles`
-
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `id` | `uuid` | Primary key (Supabase Auth UID) |
-| `email` | `text` | Email пользователя |
-| `name` | `text` | Отображаемое имя |
-| `role` | `text` | `citizen` / `government` / `business` |
-| `district` | `text` | Район Алматы |
-| `created_at` | `timestamp` | Дата регистрации |
-
-### Таблица `reports`
-
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `id` | `uuid` | Primary key |
-| `user_email` | `text` | Email автора репорта |
-| `type` | `text` | Тип проблемы (из AI) |
-| `severity` | `text` | `КРИТИЧНО` / `ВЫСОКО` / `СРЕДНЕ` / `НИЗКО` |
-| `priority_score` | `int` | Приоритет 0–100 |
-| `ai_comment` | `text` | Развёрнутый AI анализ |
-| `recommended_action` | `text` | Рекомендованное действие |
-| `estimated_fix_time` | `text` | Ожидаемый срок устранения |
-| `responsible_dept` | `text` | Ответственный отдел акимата |
-| `risk_for` | `text` | Кто под риском |
-| `duplicate_likely` | `boolean` | Возможный дубликат |
-| `address` | `text` | Адрес проблемы |
-| `lat` | `float` | Широта (координата) |
-| `lng` | `float` | Долгота (координата) |
-| `status` | `text` | `new` / `seen` / `in_progress` / `resolved` |
-| `image_url` | `text` | URL фото в Supabase Storage |
-| `created_at` | `timestamp` | Дата создания |
-
-### Row Level Security (RLS)
-
-```sql
--- Граждане видят все репорты
-CREATE POLICY "reports_select_all"
-  ON reports FOR SELECT USING (true);
-
--- Только автор может создавать
-CREATE POLICY "reports_insert_own"
-  ON reports FOR INSERT
-  WITH CHECK (auth.email() = user_email);
-
--- Только government может менять статус
-CREATE POLICY "reports_update_gov"
-  ON reports FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id = auth.uid() AND role = 'government'
-    )
-  );
+```text
+                           ┌─────────────────────────┐
+                           │       Demo Login        │
+                           │ localStorage session    │
+                           └────────────┬────────────┘
+                                        │
+                                        v
+┌────────────────────────────────────────────────────────────────────┐
+│                           React Frontend                          │
+│                                                                    │
+│  Map   Feed   ReportTab   Government Dashboard   Business Dashboard │
+│                                                                    │
+│  - creates reports                                                 │
+│  - routes cases                                                    │
+│  - uploads before/after photos                                     │
+│  - renders timeline and shared comments                            │
+└───────────────┬─────────────────────────────┬──────────────────────┘
+                │                             │
+                │                             │
+                v                             v
+      ┌───────────────────────┐     ┌──────────────────────────────┐
+      │    Express Backend    │     │           Supabase           │
+      │                       │     │                              │
+      │  /api/analyze         │     │  reports table               │
+      │  /api/reports         │     │  reports-images bucket       │
+      │  /api/health          │     │  realtime subscriptions      │
+      └──────────┬────────────┘     └──────────────────────────────┘
+                 │
+                 v
+      ┌──────────────────────────────┐
+      │   Alem AI compatible API     │
+      │   qwen3 now / Qwen 3.5 next  │
+      └──────────────────────────────┘
 ```
 
 ---
 
-## 5. API документация
+## 4. Почему архитектура гибридная
 
-Base URL: `http://localhost:3001` (dev) · `https://api.cityeye.kz` (prod)
+Сейчас проект намеренно использует **гибридную схему**:
 
----
+- frontend уже интегрирован с Supabase напрямую;
+- backend выделен для AI-анализа и серверного пути работы с reports;
+- migration и серверная нормализация уже подготовлены;
+- следующий шаг очевиден: перевести весь write-path на backend без полной переделки UI.
 
-### `POST /api/analyze`
+Это не "грязная архитектура", а прагматичный выбор для hackathon velocity:
 
-Анализ фотографии через Claude Vision, автоматическое создание репорта.
-
-**Request body:**
-
-```json
-{
-  "image": "base64_string_or_data_url",
-  "address": "ул. Абая 45, Алматы",
-  "comment": "необязательный комментарий",
-  "problemType": "road"
-}
-```
-
-**Response `201`:**
-
-```json
-{
-  "id": "rpt_abc123",
-  "type": "Яма на дороге",
-  "severity": "КРИТИЧНО",
-  "priority_score": 95,
-  "ai_comment": "Глубокая выбоина ~40 см у пешеходного перехода...",
-  "recommended_action": "Срочный ямочный ремонт в течение 24 часов",
-  "estimated_fix_time": "24 часа",
-  "responsible_dept": "Управление дорог и транспорта",
-  "risk_for": "пешеходы и водители",
-  "duplicate_likely": false,
-  "status": "new",
-  "created_at": "2026-03-30T10:00:00.000Z"
-}
-```
+- UI получилось собрать быстро;
+- совместная логика уже проверена в работающем интерфейсе;
+- server hardening можно наращивать поэтапно.
 
 ---
 
-### `GET /api/reports`
+## 5. Главные пользовательские потоки
 
-Список всех репортов.
+### 5.1 Citizen flow
 
-**Query params:**
-
-| Параметр | Тип | Описание |
-|----------|-----|----------|
-| `status` | string | `new` / `seen` / `in_progress` / `resolved` |
-| `severity` | string | `КРИТИЧНО` / `ВЫСОКО` / `СРЕДНЕ` / `НИЗКО` |
-| `limit` | number | Кол-во записей (default: `20`) |
-
-**Response `200`:**
-
-```json
-[
-  { "id": "rpt_001", "type": "...", "severity": "КРИТИЧНО", ... },
-  { "id": "rpt_002", "type": "...", "severity": "ВЫСОКО",   ... }
-]
+```text
+ReportTab
+  -> выбор типа проблемы
+  -> адрес / точка на карте
+  -> комментарий
+  -> optional photo upload
+  -> POST /api/analyze
+  -> insert into Supabase reports
+  -> report visible in map/feed/dashboard
 ```
 
----
+Особенность: обращение гражданина по умолчанию попадает в контур `government`.
 
-### `PATCH /api/reports/:id`
+### 5.2 Business flow
 
-Обновление статуса репорта. Только для роли `government`.
-
-**Request body:**
-
-```json
-{ "status": "in_progress" }
+```text
+Business user
+  -> creates report
+  -> report gets collaboration fields
+  -> responsible_role = shared
+  -> assigned_org_name = business org
+  -> report visible to business and government
 ```
 
-**Response `200`:**
+Особенность: заявка частного сектора сразу создаётся как **shared-case**, а не как изолированный private ticket.
 
-```json
-{ "id": "rpt_001", "status": "in_progress", "updated_at": "..." }
+### 5.3 Government routing flow
+
+```text
+Government dashboard
+  -> opens report modal
+  -> route to government | business | shared
+  -> updates responsible_role / assigned_org_name / shared_case
+  -> case instantly appears in correct work contour
+```
+
+### 5.4 Execution and closure
+
+```text
+Business or government
+  -> move case to in_progress
+  -> upload completion image
+  -> resolve case
+  -> shared timeline reflects completion
 ```
 
 ---
 
-### `GET /api/dashboard`
+## 6. Frontend component map
 
-Агрегированная статистика для акимата.
+### 6.1 Shell and navigation
 
-**Response `200`:**
+- [App.jsx](/Users/izbaskanaldabergen/cityeye/frontend/src/App.jsx)
+  - управляет табами `map / feed / report / gov / business`;
+  - читает и нормализует demo-user;
+  - подписывается на Supabase realtime.
 
-```json
-{
-  "total": 1204,
-  "new": 127,
-  "in_progress": 48,
-  "resolved": 843,
-  "avg_response_time": "18 часов",
-  "by_district": [
-    { "name": "Медеуский", "score": 87, "count": 142 }
-  ],
-  "by_type": [
-    { "type": "road", "count": 412 },
-    { "type": "lighting", "count": 234 }
-  ]
-}
-```
+### 6.2 Reporting
 
----
+- [ReportTab.jsx](/Users/izbaskanaldabergen/cityeye/frontend/src/tabs/ReportTab.jsx)
+  - форма обращения;
+  - Yandex geocoding для адреса;
+  - upload фото в `reports-images`;
+  - вызов `/api/analyze`;
+  - запись обращения в Supabase.
 
-## 6. AI Pipeline
+### 6.3 Government operations
 
-```
-1. 📸 Пользователь загружает фото
-       │
-2. 🔄 Frontend конвертирует в base64
-       │
-3. 📡 POST /api/analyze  {image, address, comment}
-       │
-4. 🧠 Backend → Anthropic Claude Vision API
-       │         claude-haiku-4-5-20251001
-       │
-5. 📋 Claude анализирует изображение
-       │  → тип проблемы
-       │  → критичность (0–100)
-       │  → ответственный отдел
-       │  → срок устранения
-       │  → риски для граждан
-       │
-6. 💾 Backend сохраняет репорт в Supabase
-       │
-7. ✅ Frontend показывает результат пользователю
-```
+- [Dashboard.jsx](/Users/izbaskanaldabergen/cityeye/frontend/src/tabs/Dashboard.jsx)
+  - единый реестр;
+  - route modal;
+  - AI summary;
+  - before/after evidence;
+  - collaboration timeline;
+  - partner comments.
 
-### Почему AI, а не просто форма
+### 6.4 Business operations
 
-| Задача | Без AI | С AI |
-|--------|--------|------|
-| Классификация | Пользователь выбирает вручную | Computer Vision определяет тип автоматически |
-| Дедупликация | 200 фото одной ямы = 200 заявок | 200 фото = 1 заявка с весом |
-| Приоритизация | По дате создания | По опасности, локации и типу |
-| Верификация | Акимат на слово | AI сравнивает фото до/после |
-| Аналитика | Ручные отчёты | Предиктивные паттерны и горячие точки |
+- [BusinessDashboard.jsx](/Users/izbaskanaldabergen/cityeye/frontend/src/tabs/BusinessDashboard.jsx)
+  - фильтрация собственных и assigned/shared cases;
+  - KPI по статусам;
+  - upload фото выполнения;
+  - завершение кейса;
+  - комментарий для акимата.
+
+### 6.5 Collaboration primitives
+
+- [reportCollaboration.js](/Users/izbaskanaldabergen/cityeye/frontend/src/lib/reportCollaboration.js)
+  - labels and style tokens;
+  - route builders;
+  - visibility rules;
+  - timeline model;
+  - partner comment builder.
+
+- [CollaborationWidgets.jsx](/Users/izbaskanaldabergen/cityeye/frontend/src/components/CollaborationWidgets.jsx)
+  - reusable shared-case timeline;
+  - reusable shared comment box.
 
 ---
 
-## 7. Безопасность
+## 7. Backend component map
 
-- **Supabase RLS** — Row Level Security на уровне базы данных
-- **JWT токены** — авторизация через Supabase Auth
-- **Role-based access** — дашборд акимата только для роли `government`
-- **Секреты в `.env`** — API ключи никогда не попадают в репозиторий
-- **API ключи только на бэкенде** — фронтенд не имеет доступа к `ANTHROPIC_API_KEY`
-- **CORS** — ограничен доменами продакшена
+### 7.1 API shell
 
----
+- [index.js](/Users/izbaskanaldabergen/cityeye/backend/src/index.js)
+  - health endpoint;
+  - mounting analyze router;
+  - REST endpoints for reports;
+  - patch validation.
 
-## 8. Дорожная карта
+### 7.2 AI route
 
-### Фаза 1 — MVP (Хакатон)
-```
-✅  AI анализ фото через Claude Vision
-✅  Открытая лента репортов
-✅  Государственный дашборд
-✅  Яндекс карта с пинами
-✅  Авторизация (citizen / government)
-✅  Supabase подключение
-```
+- [analyze.js](/Users/izbaskanaldabergen/cityeye/backend/routes/analyze.js)
+  - calls external AI provider;
+  - normalizes response shape;
+  - returns fallback mock if provider unavailable;
+  - isolates AI integration behind one route.
 
-### Фаза 2 — После хакатона
-```
-⬜  Публичный доступ для всех граждан Казахстана
-⬜  Push-уведомления об изменении статуса
-⬜  Верификация через фото «до / после»
-⬜  Мобильное приложение (React Native / PWA)
-⬜  Интеграция с e-Gov / eOtinish
-```
+С инженерной точки зрения это хороший задел под следующий шаг:
 
-### Фаза 3 — Масштабирование
-```
-⬜  Предиктивная аналитика горячих точек
-⬜  Интеграция городских камер (автодетекция)
-⬜  Национальный рейтинг акиматов
-⬜  API для других городов Казахстана
-⬜  Дашборд Министерства национального планирования
-```
+- текущий интерфейс уже общается с `/api/analyze`;
+- upgrade до `Qwen 3.5 Vision` можно сделать внутри backend route без перестройки всего frontend UX;
+- это позволяет эволюционно перейти от hackathon AI-assist к полноценному visual inspection pipeline.
+
+### 7.3 Report store
+
+- [reportStore.js](/Users/izbaskanaldabergen/cityeye/backend/src/reportStore.js)
+  - normalizes payloads and statuses;
+  - supports collaboration fields;
+  - supports status and full-patch update;
+  - persists into JSON file for server-side demo mode.
 
 ---
 
-*CityEye — Urban AI Monitor · Made with ❤️ in Almaty, Kazakhstan*
+## 8. Runtime data model
+
+В текущем runtime UI опирается на таблицу `reports` в Supabase. На уровне архитектуры ключевые поля выглядят так:
+
+| Поле | Назначение |
+|---|---|
+| `id` | идентификатор кейса |
+| `user_email` / `user_name` | кто создал кейс |
+| `type` | тип проблемы |
+| `severity` | критичность |
+| `priority_score` | приоритет 0-100 |
+| `ai_comment` | AI-assisted summary |
+| `recommended_action` | что рекомендуется сделать |
+| `responsible_dept` | предполагаемый ответственный отдел |
+| `address`, `lat`, `lng` | локация |
+| `image_url` | фото обращения |
+| `completion_image_url` | фото выполнения |
+| `status` | стадия кейса |
+| `reporter_role` | `citizen` / `business` / `government` |
+| `reporter_org_name` | организация автора, если это бизнес |
+| `responsible_role` | `government` / `business` / `shared` |
+| `assigned_org_name` | назначенная частная организация |
+| `shared_case` | признак общего кейса |
+| `partner_comment` | координационный комментарий сторон |
+
+Миграция: [20260402_add_completion_image_url.sql](/Users/izbaskanaldabergen/cityeye/supabase/migrations/20260402_add_completion_image_url.sql)
+
+---
+
+## 9. Статусы
+
+### В UI активно используются
+
+- `new`
+- `in_progress`
+- `resolved`
+- `rejected`
+
+### В backend уже подготовлены
+
+- `triage`
+- `waiting_partner`
+- `verified`
+
+Это значит, что система уже может эволюционировать к более формальному workflow без смены модели данных.
+
+---
+
+## 10. Realtime, storage, and maps
+
+### Realtime
+
+Frontend подписывается на `postgres_changes` для таблицы `reports`, поэтому:
+
+- карта обновляется без ручного refresh;
+- кабинеты акимата и бизнеса видят новые кейсы почти сразу;
+- shared-case выглядит живым на демо.
+
+### Storage
+
+Bucket `reports-images` используется для:
+
+- фото обращения;
+- фото результата после выполнения.
+
+### Maps
+
+Yandex Maps используется в двух ролях:
+
+- обзорная карта со всеми обращениями;
+- interactive point selection при создании кейса.
+
+---
+
+## 11. Security and operating mode
+
+### Что уже хорошо
+
+- backend AI secret вынесен в env;
+- server patch-path валидирует допустимые поля и статусы;
+- demo mode может работать без AI-key, не ломая UX;
+- collaboration fields нормализуются на уровне server store.
+
+### Что пока demo-only
+
+- role session хранится в `localStorage`;
+- frontend использует direct Supabase writes;
+- полноценные RLS policies не оформлены в репозитории;
+- frontend-конфигурация Supabase и Yandex пока не вынесена в env.
+
+### Практический вывод
+
+Сейчас система **достаточно честно собрана для demo and validation**, но ещё не готова к публичному городскому запуску без следующего слоя hardening.
+
+---
+
+## 12. Почему эта архитектура хороша для хакатона
+
+Она одновременно:
+
+- достаточно простая, чтобы показать end-to-end MVP;
+- достаточно зрелая, чтобы звучать как реальный GovTech продукт;
+- достаточно честная, чтобы не обещать невыполненное;
+- достаточно гибкая, чтобы после хакатона перейти к production path.
+
+Самое сильное место архитектуры не в количестве сервисов, а в том, что **в одной модели уже соединены гражданское обращение, ведомственная маршрутизация и работа частного исполнителя**.
+
+---
+
+## 13. Следующий инженерный шаг
+
+Если продолжать проект после хакатона, правильная последовательность такая:
+
+1. сделать backend единственным write-path для `reports`;
+2. заменить demo-login на Supabase Auth и profiles;
+3. включить RLS и role-based update policies;
+4. добавить audit trail и SLA;
+5. перевести `/api/analyze` на полноценный multimodal режим с `Qwen 3.5 Vision`.

@@ -6,9 +6,43 @@ import { dirname, join } from 'path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPORTS_PATH = join(__dirname, '../data/reports.json');
 
-export const VALID_STATUSES = ['new', 'in_progress', 'resolved', 'rejected'];
+export const VALID_STATUSES = ['new', 'triage', 'in_progress', 'waiting_partner', 'resolved', 'verified', 'rejected'];
 export const VALID_SEVERITIES = ['critical', 'high', 'medium', 'low'];
 export const VALID_CATEGORIES = ['road', 'lighting', 'greenery', 'utilities', 'waste', 'other'];
+export const VALID_REPORTER_ROLES = ['citizen', 'government', 'business'];
+export const VALID_RESPONSIBLE_ROLES = ['government', 'business', 'shared'];
+export const PATCHABLE_REPORT_FIELDS = [
+  'title',
+  'description',
+  'type',
+  'category',
+  'severity',
+  'status',
+  'address',
+  'comment',
+  'image',
+  'image_url',
+  'completion_image_url',
+  'partner_comment',
+  'priority_score',
+  'ai_comment',
+  'recommended_action',
+  'estimated_fix_time',
+  'responsible_dept',
+  'risk_for',
+  'duplicate_likely',
+  'estimated_resolution_days',
+  'recommendations',
+  'lat',
+  'lng',
+  'user_email',
+  'user_name',
+  'reporter_role',
+  'reporter_org_name',
+  'responsible_role',
+  'assigned_org_name',
+  'shared_case',
+];
 
 const CATEGORY_ALIASES = new Map([
   ['road', 'road'],
@@ -56,10 +90,59 @@ const SEVERITY_ALIASES = new Map([
   ['низкий', 'low'],
 ]);
 
+const REPORTER_ROLE_ALIASES = new Map([
+  ['citizen', 'citizen'],
+  ['user', 'citizen'],
+  ['resident', 'citizen'],
+  ['граждан', 'citizen'],
+  ['government', 'government'],
+  ['gov', 'government'],
+  ['state', 'government'],
+  ['акимат', 'government'],
+  ['business', 'business'],
+  ['company', 'business'],
+  ['private', 'business'],
+  ['бизнес', 'business'],
+  ['ук', 'business'],
+]);
+
+const RESPONSIBLE_ROLE_ALIASES = new Map([
+  ['government', 'government'],
+  ['gov', 'government'],
+  ['акимат', 'government'],
+  ['business', 'business'],
+  ['private', 'business'],
+  ['company', 'business'],
+  ['бизнес', 'business'],
+  ['shared', 'shared'],
+  ['joint', 'shared'],
+  ['совмест', 'shared'],
+]);
+
 function toStringOrNull(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function toNumberOrNull(value) {
+  if (value == null) return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function toBooleanOrNull(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'y', 'да'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'n', 'нет'].includes(normalized)) return false;
+  }
+
+  return null;
 }
 
 function clamp(value, min, max) {
@@ -120,6 +203,13 @@ function defaultRecommendations(category, severity) {
   return [urgency, byCategory[category] ?? byCategory.other];
 }
 
+function defaultPriorityScore(severity) {
+  if (severity === 'critical') return 90;
+  if (severity === 'high') return 70;
+  if (severity === 'low') return 20;
+  return 50;
+}
+
 export async function readReports() {
   try {
     const raw = await readFile(REPORTS_PATH, 'utf8');
@@ -150,6 +240,7 @@ export function normalizeSeverity(value, priorityScore) {
   const source = (toStringOrNull(value) ?? '').toLowerCase();
 
   if (VALID_SEVERITIES.includes(source)) return source;
+
   for (const [marker, severity] of SEVERITY_ALIASES.entries()) {
     if (source.includes(marker)) return severity;
   }
@@ -225,13 +316,88 @@ function normalizeImage(image, mediaType = 'image/jpeg') {
   return `data:${mediaType};base64,${raw}`;
 }
 
+function normalizePriorityScore(value, severity = 'medium') {
+  const numeric = toNumberOrNull(value);
+  if (numeric == null) return defaultPriorityScore(severity);
+  return clamp(Math.round(numeric), 0, 100);
+}
+
+function normalizeCoordinate(value, min, max) {
+  const numeric = toNumberOrNull(value);
+  if (numeric == null) return null;
+  return clamp(numeric, min, max);
+}
+
+function normalizeReporterRole(value, fallback = 'citizen') {
+  const source = (toStringOrNull(value) ?? fallback).toLowerCase();
+
+  if (VALID_REPORTER_ROLES.includes(source)) return source;
+
+  for (const [marker, role] of REPORTER_ROLE_ALIASES.entries()) {
+    if (source.includes(marker)) return role;
+  }
+
+  return fallback;
+}
+
+function normalizeResponsibleRole(value, fallback = 'government') {
+  const source = (toStringOrNull(value) ?? fallback).toLowerCase();
+
+  if (VALID_RESPONSIBLE_ROLES.includes(source)) return source;
+
+  for (const [marker, role] of RESPONSIBLE_ROLE_ALIASES.entries()) {
+    if (source.includes(marker)) return role;
+  }
+
+  return fallback;
+}
+
+function normalizeCollaborationFields(payload = {}) {
+  const inferredReporterRole =
+    payload.user_email === 'business@cityeye.kz'
+      ? 'business'
+      : payload.user_email === 'gov@cityeye.kz'
+        ? 'government'
+        : 'citizen';
+
+  const reporterRole = normalizeReporterRole(payload.reporter_role, inferredReporterRole);
+  const reporterOrgName = reporterRole === 'business'
+    ? toStringOrNull(payload.reporter_org_name ?? payload.user_name)
+    : null;
+
+  let responsibleRole = normalizeResponsibleRole(
+    payload.responsible_role,
+    reporterRole === 'business' ? 'shared' : 'government'
+  );
+
+  let sharedCase = toBooleanOrNull(payload.shared_case);
+  if (sharedCase == null) sharedCase = responsibleRole === 'shared';
+  if (sharedCase) responsibleRole = 'shared';
+  if (responsibleRole === 'shared') sharedCase = true;
+
+  let assignedOrgName = toStringOrNull(payload.assigned_org_name);
+  if ((responsibleRole === 'business' || responsibleRole === 'shared') && !assignedOrgName) {
+    assignedOrgName = reporterRole === 'business' ? reporterOrgName : null;
+  }
+  if (responsibleRole === 'government') {
+    assignedOrgName = null;
+  }
+
+  return {
+    reporter_role: reporterRole,
+    reporter_org_name: reporterOrgName,
+    responsible_role: responsibleRole,
+    assigned_org_name: assignedOrgName,
+    shared_case: sharedCase,
+  };
+}
+
 export function normalizeReportPayload(payload = {}) {
   const category = normalizeCategory(payload.category ?? payload.problemType ?? payload.type);
   const severity = normalizeSeverity(payload.severity, payload.priority_score);
 
   const address = toStringOrNull(payload.address);
   const comment = toStringOrNull(payload.comment);
-
   const title = toStringOrNull(payload.title)
     ?? toStringOrNull(payload.type)
     ?? defaultTitleByCategory(category);
@@ -248,17 +414,41 @@ export function normalizeReportPayload(payload = {}) {
     severity
   );
 
+  const userEmail = toStringOrNull(payload.user_email);
+  const userName = toStringOrNull(payload.user_name);
+  const collaboration = normalizeCollaborationFields({
+    ...payload,
+    user_email: userEmail,
+    user_name: userName,
+  });
+
   return {
     title,
     description,
+    type: toStringOrNull(payload.type) ?? title,
     category,
     severity,
     status,
     address,
+    lat: normalizeCoordinate(payload.lat, -90, 90),
+    lng: normalizeCoordinate(payload.lng, -180, 180),
     image: normalizeImage(payload.image, payload.media_type),
+    image_url: toStringOrNull(payload.image_url),
     comment,
+    priority_score: normalizePriorityScore(payload.priority_score, severity),
+    ai_comment: toStringOrNull(payload.ai_comment) ?? description,
+    recommended_action: toStringOrNull(payload.recommended_action),
+    estimated_fix_time: toStringOrNull(payload.estimated_fix_time),
+    responsible_dept: toStringOrNull(payload.responsible_dept),
+    risk_for: toStringOrNull(payload.risk_for),
+    duplicate_likely: toBooleanOrNull(payload.duplicate_likely) ?? false,
     estimated_resolution_days: estimatedResolutionDays,
     recommendations: normalizeRecommendations(payload.recommendations ?? payload.recommended_action, category, severity),
+    user_email: userEmail,
+    user_name: userName,
+    completion_image_url: toStringOrNull(payload.completion_image_url),
+    partner_comment: toStringOrNull(payload.partner_comment),
+    ...collaboration,
   };
 }
 
@@ -278,13 +468,7 @@ export async function createReport(payload = {}) {
   return report;
 }
 
-export async function updateReportStatus(id, status) {
-  if (!VALID_STATUSES.includes(status)) {
-    const err = new Error(`status must be one of: ${VALID_STATUSES.join(', ')}`);
-    err.statusCode = 400;
-    throw err;
-  }
-
+export async function updateReport(id, patch = {}) {
   const reports = await readReports();
   const index = reports.findIndex(report => report.id === id);
 
@@ -294,12 +478,25 @@ export async function updateReportStatus(id, status) {
     throw err;
   }
 
+  const existing = reports[index];
+  const normalized = normalizeReportPayload({ ...existing, ...patch });
+
   reports[index] = {
-    ...reports[index],
-    status,
+    ...existing,
+    ...normalized,
     updated_at: new Date().toISOString(),
   };
 
   await writeReports(reports);
   return reports[index];
+}
+
+export async function updateReportStatus(id, status, extraFields = {}) {
+  if (!VALID_STATUSES.includes(status)) {
+    const err = new Error(`status must be one of: ${VALID_STATUSES.join(', ')}`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  return updateReport(id, { ...extraFields, status });
 }

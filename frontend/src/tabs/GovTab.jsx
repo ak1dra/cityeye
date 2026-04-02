@@ -2,6 +2,13 @@ import { useState } from 'react';
 import { updateStatus } from '../api';
 import { MapPin, Clock, ChevronDown, AlertTriangle } from 'lucide-react';
 
+const GOV_USER = {
+  name: 'Ruslan Berdenov',
+  position: 'Заместитель акима Алматы',
+  avatar: '/ruslan-avatar.jpg',
+  initials: 'RB',
+};
+
 const SEVERITY_CONFIG = {
   critical: { label: 'Критично', color: '#EF4444', bg: '#FEF2F2', border: '#FECACA' },
   high:     { label: 'Высокий',  color: '#F97316', bg: '#FFF7ED', border: '#FED7AA' },
@@ -91,13 +98,35 @@ export default function GovTab({ reports, onStatusChange }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       {/* Header */}
-      <div>
-        <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: 'var(--text)' }}>
-          Портал акимата · Алматы
-        </h2>
-        <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-          Управление городскими репортами
-        </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ position: 'relative' }}>
+            <img
+              src={GOV_USER.avatar}
+              alt={GOV_USER.name}
+              style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover', border: '2.5px solid #6366f1', display: 'block' }}
+              onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
+            />
+            <div style={{ display: 'none', width: 52, height: 52, borderRadius: '50%', background: '#eef2ff', border: '2.5px solid #6366f1', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#6366f1' }}>
+              {GOV_USER.initials}
+            </div>
+            <div style={{ position: 'absolute', bottom: 1, right: 1, width: 11, height: 11, borderRadius: '50%', background: '#22c55e', border: '2px solid #fff' }} />
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: 'var(--text)' }}>{GOV_USER.name}</h2>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="#6366f1"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              <span style={{ fontSize: 10, fontWeight: 700, background: '#eef2ff', color: '#6366f1', padding: '2px 8px', borderRadius: 20 }}>Официально</span>
+            </div>
+            <p style={{ margin: '3px 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              {GOV_USER.position} · Портал управления городом
+            </p>
+          </div>
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 20, padding: '5px 14px' }}>
+          <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e' }} />
+          <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>Онлайн</span>
+        </div>
       </div>
 
       {/* Metrics */}
@@ -215,7 +244,7 @@ export default function GovTab({ reports, onStatusChange }) {
                       </td>
                       {/* Type */}
                       <td style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' }}>
-                        {CATEGORY_LABEL[r.category] ?? r.category ?? '—'}
+                        {CATEGORY_LABEL[r.type] ?? r.type ?? '—'}
                       </td>
                       {/* Address */}
                       <td style={{ padding: '10px 14px', color: 'var(--text-muted)', maxWidth: 180 }}>
