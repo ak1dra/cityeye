@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { Building2, Camera, CheckCircle2, CircleAlert, LogOut, Map, Newspaper, RefreshCw, Wrench } from 'lucide-react';
+import { AITriagePanel } from '../components/AITriagePanel';
 import { CollaborationTimeline, PartnerCommentBox } from '../components/CollaborationWidgets';
 import { GlassCard, GlassPanel } from '../components/GlassPanel';
 import { supabase } from '../lib/supabase';
@@ -435,8 +436,8 @@ function ReportCard({
     <GlassPanel delay={delay} style={{ padding: 18 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 12 }}>
         <div style={{ flex: 1, minWidth: 220 }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>
-            {CATEGORY_LABEL[report.type] ?? report.type ?? 'Заявка'}
+        <div style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>
+            {report.detected_issue_title ?? CATEGORY_LABEL[report.type] ?? report.type ?? 'Заявка'}
           </div>
           <div style={{ fontSize: 13, color: '#64748b', lineHeight: 1.5 }}>
             {report.address || 'Адрес не указан'} · {new Date(report.created_at ?? Date.now()).toLocaleString('ru-RU')}
@@ -455,11 +456,7 @@ function ReportCard({
         {assignedOrg && <MetaPill label="Назначено" value={assignedOrg} />}
       </div>
 
-      {report.ai_comment && (
-        <div style={{ fontSize: 14, color: '#475569', lineHeight: 1.65, marginBottom: 12 }}>
-          {report.ai_comment}
-        </div>
-      )}
+      <AITriagePanel data={report} compact title="AI reason for routing" />
 
       {isSharedCase(report) && (
         <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 12, background: '#fef3c7', border: '1px solid #fde68a', color: '#92400e', fontSize: 13, fontWeight: 600 }}>
@@ -473,12 +470,6 @@ function ReportCard({
         <ImageCard title="Исходное фото" image={originalImage} emptyLabel="Фото обращения отсутствует" />
         <ImageCard title="Фото результата" image={completionImage} emptyLabel="Загрузите фото после устранения" />
       </div>
-
-      {report.responsible_dept && (
-        <div style={{ marginBottom: 14, fontSize: 13, color: '#64748b' }}>
-          Ответственный отдел: <strong style={{ color: '#0f172a' }}>{report.responsible_dept}</strong>
-        </div>
-      )}
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         {report.status === 'new' && (

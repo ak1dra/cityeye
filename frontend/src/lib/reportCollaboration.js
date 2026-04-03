@@ -1,4 +1,5 @@
 import { BUSINESS_PROFILE } from './userProfile';
+import { getAIDossier } from './aiTriage';
 
 export const BUSINESS_ORG_NAME = BUSINESS_PROFILE.name;
 
@@ -122,12 +123,18 @@ export function getReportTimeline(report) {
   const responsibility = getResponsibleRole(report);
   const shared = isSharedCase(report);
   const assignedOrg = getAssignedOrgName(report);
+  const aiDossier = getAIDossier(report);
 
   const createdLabel = reporterRole === 'business'
     ? 'Подано бизнесом'
     : reporterRole === 'government'
       ? 'Зарегистрировано акиматом'
       : 'Подано жителем';
+
+  const triageLabel = aiDossier.hasTriage ? 'AI triage completed' : 'AI triage pending';
+  const triageCaption = aiDossier.hasTriage
+    ? `${aiDossier.confidence.label} · ${aiDossier.suggestedRole.label}`
+    : 'AI-досье ещё не сформировано';
 
   const routeLabel = shared
     ? 'Совместный контур'
@@ -155,12 +162,15 @@ export function getReportTimeline(report) {
     ? 'done'
     : status === 'in_progress' || status === 'waiting_partner'
       ? 'work'
-      : 'route';
+      : aiDossier.hasTriage
+        ? 'route'
+        : 'triage';
 
-  const stepOrder = ['created', 'route', 'work', 'done'];
+  const stepOrder = ['created', 'triage', 'route', 'work', 'done'];
 
   return [
     { id: 'created', label: createdLabel, caption: getReporterName(report) },
+    { id: 'triage', label: triageLabel, caption: triageCaption },
     { id: 'route', label: routeLabel, caption: routeCaption },
     { id: 'work', label: workLabel, caption: workCaption },
     { id: 'done', label: finishLabel, caption: finishCaption },

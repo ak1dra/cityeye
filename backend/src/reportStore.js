@@ -11,6 +11,7 @@ export const VALID_SEVERITIES = ['critical', 'high', 'medium', 'low'];
 export const VALID_CATEGORIES = ['road', 'lighting', 'greenery', 'utilities', 'waste', 'other'];
 export const VALID_REPORTER_ROLES = ['citizen', 'government', 'business'];
 export const VALID_RESPONSIBLE_ROLES = ['government', 'business', 'shared'];
+export const VALID_CONFIDENCE_LABELS = ['high', 'medium', 'low'];
 export const PATCHABLE_REPORT_FIELDS = [
   'title',
   'description',
@@ -25,12 +26,15 @@ export const PATCHABLE_REPORT_FIELDS = [
   'completion_image_url',
   'partner_comment',
   'priority_score',
+  'detected_issue_title',
   'ai_comment',
   'recommended_action',
   'estimated_fix_time',
   'responsible_dept',
   'risk_for',
   'duplicate_likely',
+  'suggested_responsible_role',
+  'confidence_label',
   'estimated_resolution_days',
   'recommendations',
   'lat',
@@ -352,6 +356,15 @@ function normalizeResponsibleRole(value, fallback = 'government') {
   return fallback;
 }
 
+function normalizeConfidenceLabel(value, fallback = 'medium') {
+  const source = (toStringOrNull(value) ?? fallback).toLowerCase();
+
+  if (VALID_CONFIDENCE_LABELS.includes(source)) return source;
+  if (source.includes('выс')) return 'high';
+  if (source.includes('низ')) return 'low';
+  return 'medium';
+}
+
 function normalizeCollaborationFields(payload = {}) {
   const inferredReporterRole =
     payload.user_email === 'business@cityeye.kz'
@@ -436,12 +449,15 @@ export function normalizeReportPayload(payload = {}) {
     image_url: toStringOrNull(payload.image_url),
     comment,
     priority_score: normalizePriorityScore(payload.priority_score, severity),
+    detected_issue_title: toStringOrNull(payload.detected_issue_title) ?? title,
     ai_comment: toStringOrNull(payload.ai_comment) ?? description,
     recommended_action: toStringOrNull(payload.recommended_action),
     estimated_fix_time: toStringOrNull(payload.estimated_fix_time),
     responsible_dept: toStringOrNull(payload.responsible_dept),
     risk_for: toStringOrNull(payload.risk_for),
     duplicate_likely: toBooleanOrNull(payload.duplicate_likely) ?? false,
+    suggested_responsible_role: normalizeResponsibleRole(payload.suggested_responsible_role, collaboration.responsible_role),
+    confidence_label: normalizeConfidenceLabel(payload.confidence_label, payload.image || payload.image_url ? 'high' : 'medium'),
     estimated_resolution_days: estimatedResolutionDays,
     recommendations: normalizeRecommendations(payload.recommendations ?? payload.recommended_action, category, severity),
     user_email: userEmail,

@@ -1,11 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
+import { AkimatAssistantPanel } from '../components/AkimatAssistantPanel';
+import { AITriagePanel } from '../components/AITriagePanel';
 import { CollaborationTimeline, PartnerCommentBox } from '../components/CollaborationWidgets';
 import { supabase } from '../lib/supabase';
-import { updateReport, updateStatus } from '../api';
+import { getAssistantGuidance, updateReport, updateStatus } from '../api';
+import { getAIDossier } from '../lib/aiTriage';
 import {
   buildPartnerCommentEntry,
   buildBusinessRouteFields,
@@ -178,6 +181,7 @@ function ReportModal({ report: initialReport, user, onClose, onStatusChange, onR
   const reporterRole = getReporterRole(report);
   const routeStyle = RESPONSIBILITY_STYLE[responsibility];
   const assignedOrg = getAssignedOrgName(report);
+  const aiDossier = getAIDossier(report);
 
   async function advance() {
     if (!next) return;
@@ -276,7 +280,7 @@ function ReportModal({ report: initialReport, user, onClose, onStatusChange, onR
           </div>
 
           <h2 style={{ margin: '0 0 6px', fontSize: 20, fontWeight: 700, color: '#0f172a' }}>
-            {report.type || 'Городская проблема'}
+            {report.detected_issue_title || report.type || 'Городская проблема'}
           </h2>
 
           {report.address && (
@@ -286,15 +290,7 @@ function ReportModal({ report: initialReport, user, onClose, onStatusChange, onR
             </div>
           )}
 
-          {/* AI Comment */}
-          {report.ai_comment && (
-            <div style={{ background: 'linear-gradient(135deg,#fafbff,#f0f4ff)', border: '1px solid #c7d2fe', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
-              <div style={{ fontSize: 11, color: '#6366f1', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
-                AI-анализ
-              </div>
-              <p style={{ margin: 0, fontSize: 13, color: '#64748b', lineHeight: 1.7 }}>{report.ai_comment}</p>
-            </div>
-          )}
+          <AITriagePanel report={report} data={report} title="AI-досье кейса" />
 
           {/* Meta grid */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
@@ -389,11 +385,17 @@ function ReportModal({ report: initialReport, user, onClose, onStatusChange, onR
             <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>
               Маршрутизация
             </div>
+            {aiDossier.hasTriage && (
+              <div style={{ marginBottom: 10, fontSize: 12, color: '#475569', lineHeight: 1.6 }}>
+                AI рекомендует маршрут: <strong style={{ color: aiDossier.suggestedRole.color }}>{aiDossier.suggestedRole.label}</strong>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <RouteButton
                 active={responsibility === 'government'}
                 label="Вести акиматом"
                 color="#6366f1"
+                recommended={aiDossier.suggestedRoleKey === 'government'}
                 onClick={() => routeTo(buildGovernmentRouteFields())}
                 disabled={busy}
               />
@@ -401,6 +403,7 @@ function ReportModal({ report: initialReport, user, onClose, onStatusChange, onR
                 active={responsibility === 'business'}
                 label="Передать бизнесу"
                 color="#0f766e"
+                recommended={aiDossier.suggestedRoleKey === 'business'}
                 onClick={() => routeTo(buildBusinessRouteFields())}
                 disabled={busy}
               />
@@ -408,6 +411,7 @@ function ReportModal({ report: initialReport, user, onClose, onStatusChange, onR
                 active={isSharedCase(report)}
                 label="Совместно"
                 color="#a16207"
+                recommended={aiDossier.suggestedRoleKey === 'shared'}
                 onClick={() => routeTo(buildSharedRouteFields())}
                 disabled={busy}
               />
@@ -438,6 +442,11 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
   const [filterSt,    setFilterSt]    = useState('all');
   const [search,      setSearch]      = useState('');
   const [selected,    setSelected]    = useState(null);
+  const [assistantReport, setAssistantReport] = useState(null);
+  const [assistantData, setAssistantData] = useState(null);
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantError, setAssistantError] = useState(null);
+  const [assistantRouteBusy, setAssistantRouteBusy] = useState(false);
   const [activeNav,   setActiveNav]   = useState('chart');
   const [lastUpdated, setLastUpdated] = useState(null);
 
@@ -493,7 +502,7 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
   const criticalCnt = reports.filter(r => r.severity === 'КРИТИЧНО' || r.severity === 'critical').length;
 
   /* ── Filtered table ── */
-  const tableRows = reports.filter(r => {
+  const tableRows = useMemo(() => reports.filter(r => {
     const matchSev = filterSev === 'all' || r.severity === filterSev;
     const matchSt  = filterSt  === 'all' || r.status   === filterSt;
     const q = search.toLowerCase();
@@ -503,7 +512,88 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
       || (r.reporter_org_name ?? '').toLowerCase().includes(q)
       || (r.assigned_org_name ?? '').toLowerCase().includes(q);
     return matchSev && matchSt && matchSearch;
-  });
+  }), [reports, filterSev, filterSt, search]);
+
+  useEffect(() => {
+    if (!assistantReport?.id) return;
+    const refreshed = reports.find(report => report.id === assistantReport.id);
+    if (!refreshed) {
+      setAssistantReport(null);
+      return;
+    }
+    if (refreshed !== assistantReport) {
+      setAssistantReport(refreshed);
+    }
+  }, [reports, assistantReport?.id]);
+
+  const loadAssistant = useCallback(async (reportOverride = assistantReport) => {
+    setAssistantLoading(true);
+    setAssistantError(null);
+
+    try {
+      const data = await getAssistantGuidance(
+        reportOverride
+          ? {
+              mode: 'report_guidance',
+              report: reportOverride,
+            }
+          : {
+              mode: 'dashboard_overview',
+              reports: tableRows,
+              filters: {
+                status: filterSt,
+                severity: filterSev,
+                search,
+              },
+            }
+      );
+
+      setAssistantData(data);
+    } catch (error) {
+      setAssistantError(error.message);
+    } finally {
+      setAssistantLoading(false);
+    }
+  }, [assistantReport, tableRows, filterSt, filterSev, search]);
+
+  useEffect(() => {
+    if (loading) return;
+    loadAssistant();
+  }, [loading, loadAssistant]);
+
+  async function applyAssistantRoute() {
+    if (!assistantReport || !assistantData?.recommended_route) return;
+
+    const route = assistantData.recommended_route;
+    const patch = route === 'business'
+      ? buildBusinessRouteFields()
+      : route === 'shared'
+        ? buildSharedRouteFields()
+        : buildGovernmentRouteFields();
+
+    setAssistantRouteBusy(true);
+    try {
+      const updated = await updateReport(assistantReport.id, patch);
+      setAssistantReport(updated);
+      if (selected?.id === updated.id) {
+        setSelected(updated);
+      }
+      await loadReports();
+      await loadAssistant(updated);
+    } catch (error) {
+      setAssistantError(error.message);
+    } finally {
+      setAssistantRouteBusy(false);
+    }
+  }
+
+  function openReportFromAssistant(reportPreview) {
+    if (!reportPreview?.id) return;
+    const fullReport = reports.find(report => report.id === reportPreview.id);
+    if (!fullReport) return;
+    setAssistantReport(fullReport);
+    setSelected(fullReport);
+  }
 
   const chartData = buildChartData(reports);
 
@@ -598,6 +688,18 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
             <StatCard value={inProgCnt}   label="В обработке"     color="#f59e0b" icon="clock"  sub="назначены" />
             <StatCard value={resolvedCnt} label="Решено"          color="#22c55e" icon="check"  sub="закрыто" />
           </div>
+
+          <AkimatAssistantPanel
+            data={assistantData}
+            loading={assistantLoading}
+            error={assistantError}
+            focusedReport={assistantReport}
+            routeApplying={assistantRouteBusy}
+            onRefresh={() => loadAssistant()}
+            onApplyRoute={applyAssistantRoute}
+            onClearFocus={() => setAssistantReport(null)}
+            onOpenReport={openReportFromAssistant}
+          />
 
           {/* ── Chart ── */}
           <div style={{ background: '#fff', border: '1px solid #e8eaed', borderRadius: 16, padding: '20px 20px 12px', marginBottom: 20 }}>
@@ -735,7 +837,7 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
                       return (
                         <tr
                           key={r.id}
-                          onClick={() => setSelected(r)}
+                          onClick={() => { setAssistantReport(r); setSelected(r); }}
                           style={{ borderBottom: isLast ? 'none' : '1px solid #f8fafc', cursor: 'pointer', transition: 'background 0.1s' }}
                           onMouseEnter={e => e.currentTarget.style.background = '#fafbff'}
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
@@ -754,12 +856,17 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
                           {/* Type + Address */}
                           <td style={{ padding: '10px 14px', maxWidth: 200 }}>
                             <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', marginBottom: 2 }}>
-                              {r.type || '—'}
+                              {r.detected_issue_title || r.type || '—'}
                             </div>
                             {r.address && (
                               <div style={{ fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 <Icon n="pin" size={10} color="#94a3b8" />
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.address}</span>
+                              </div>
+                            )}
+                            {r.confidence_label && (
+                              <div style={{ marginTop: 5, fontSize: 11, color: '#6366f1', fontWeight: 700 }}>
+                                AI {String(r.confidence_label).toUpperCase()} · {r.priority_score ?? 0}/100
                               </div>
                             )}
                           </td>
@@ -896,22 +1003,23 @@ function QuickAction({ reportId, current, next, onDone }) {
   );
 }
 
-function RouteButton({ active, label, color, onClick, disabled }) {
+function RouteButton({ active, label, color, onClick, disabled, recommended = false }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       style={{
-        background: active ? `${color}16` : '#fff',
+        background: active ? `${color}16` : recommended ? `${color}08` : '#fff',
         color,
-        border: `1px solid ${active ? `${color}55` : '#e5e7eb'}`,
+        border: `1px solid ${active ? `${color}55` : recommended ? `${color}40` : '#e5e7eb'}`,
         borderRadius: 10,
         padding: '9px 14px',
         fontSize: 12,
         fontWeight: 700,
+        boxShadow: recommended ? `0 0 0 3px ${color}12` : 'none',
       }}
     >
-      {label}
+      {label}{recommended ? ' · AI' : ''}
     </button>
   );
 }

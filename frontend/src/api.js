@@ -15,6 +15,19 @@ export async function analyzeImage(payload) {
   return res.json();
 }
 
+export async function getAssistantGuidance(payload) {
+  const res = await fetch(`${BASE}/assistant`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function getReports() {
   const { data, error } = await supabase
     .from('reports')

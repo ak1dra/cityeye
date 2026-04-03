@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import analyzeRouter from '../routes/analyze.js';
+import assistantRouter from '../routes/assistant.js';
 import {
   createReport,
   readReports,
@@ -11,6 +12,16 @@ import {
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
+const ANALYZE_PROVIDER = process.env.ALEM_API_KEY
+  ? 'alem'
+  : process.env.ANTHROPIC_API_KEY
+    ? 'anthropic'
+    : 'mock';
+const ANALYZE_MODEL = ANALYZE_PROVIDER === 'alem'
+  ? (process.env.ALEM_MODEL || 'qwen3')
+  : ANALYZE_PROVIDER === 'anthropic'
+    ? (process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-latest')
+    : 'mock-triage';
 
 app.use(express.json({ limit: '20mb' }));
 
@@ -19,12 +30,13 @@ app.get('/api/health', (_req, res) => {
     ok: true,
     timestamp: new Date().toISOString(),
     uptime_seconds: Math.round(process.uptime()),
-    analyze_provider: process.env.ALEM_API_KEY ? 'alem' : 'mock',
-    analyze_model: process.env.ALEM_MODEL || 'qwen3',
+    analyze_provider: ANALYZE_PROVIDER,
+    analyze_model: ANALYZE_MODEL,
   });
 });
 
 app.use('/api/analyze', analyzeRouter);
+app.use('/api/assistant', assistantRouter);
 
 app.get('/api/reports', async (_req, res) => {
   try {
