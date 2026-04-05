@@ -6,7 +6,7 @@ import {
 import { AkimatAssistantPanel } from '../components/AkimatAssistantPanel';
 import { AITriagePanel } from '../components/AITriagePanel';
 import { CollaborationTimeline, PartnerCommentBox } from '../components/CollaborationWidgets';
-import { supabase } from '../lib/supabase';
+import { VerifyBadge } from '../components/VerifyBadge';
 import { getAssistantGuidance, updateReport, updateStatus } from '../api';
 import { getAIDossier } from '../lib/aiTriage';
 import {
@@ -60,11 +60,22 @@ const SEV_BG = {
   medium: 'rgba(234,179,8,0.1)',   low: 'rgba(34,197,94,0.1)',
 };
 
-const DISTRICTS = [
-  { name: 'Медеуский', score: 91 }, { name: 'Бостандыкский', score: 84 },
-  { name: 'Алмалинский', score: 73 }, { name: 'Жетысуский', score: 67 },
-  { name: 'Ауэзовский', score: 58 }, { name: 'Турксибский', score: 49 },
-];
+/** Compute district stats from real report data. */
+function computeDistricts(reports) {
+  const KNOWN = ['Медеуский', 'Бостандыкский', 'Алмалинский', 'Жетысуский', 'Ауэзовский', 'Турксибский', 'Алатауский', 'Наурызбайский'];
+  const map = {};
+  for (const r of reports) {
+    const addr = r.address || '';
+    const d = KNOWN.find(n => addr.toLowerCase().includes(n.toLowerCase().replace('ский', '')));
+    if (!d) continue;
+    if (!map[d]) map[d] = { total: 0, resolved: 0 };
+    map[d].total++;
+    if (r.status === 'resolved') map[d].resolved++;
+  }
+  return Object.entries(map)
+    .map(([name, s]) => ({ name, score: s.total > 0 ? Math.round((s.resolved / s.total) * 100) : 0, total: s.total }))
+    .sort((a, b) => b.score - a.score);
+}
 
 /* ── helpers ── */
 function timeAgo(s) {
@@ -319,10 +330,31 @@ function ReportModal({ report: initialReport, user, onClose, onStatusChange, onR
               <div style={{ fontSize: 11, color: '#16a34a', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
                 Фото выполнения
               </div>
-              <img
-                src={report.completion_image_url}
-                alt="Фото выполнения"
-                style={{ width: '100%', height: 180, objectFit: 'cover', borderRadius: 14, display: 'block', border: '1px solid #d1fae5' }}
+              <div style={{ display: 'grid', gridTemplateColumns: (report.image_url || report.image) ? '1fr 1fr' : '1fr', gap: 8, marginBottom: 10 }}>
+                {(report.image_url || report.image) && (
+                  <div>
+                    <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, marginBottom: 4 }}>ДО</div>
+                    <img
+                      src={report.image_url || report.image}
+                      alt="До"
+                      style={{ width: '100%', height: 140, objectFit: 'cover', borderRadius: 10, border: '1px solid #fecaca' }}
+                    />
+                  </div>
+                )}
+                <div>
+                  <div style={{ fontSize: 10, color: '#16a34a', fontWeight: 700, marginBottom: 4 }}>ПОСЛЕ</div>
+                  <img
+                    src={report.completion_image_url}
+                    alt="После"
+                    style={{ width: '100%', height: 140, objectFit: 'cover', borderRadius: 10, border: '1px solid #86efac' }}
+                  />
+                </div>
+              </div>
+              <VerifyBadge
+                beforeUrl={report.image_url || report.image}
+                afterUrl={report.completion_image_url}
+                type={report.type}
+                description={report.title || report.description}
               />
             </div>
           )}
@@ -335,7 +367,7 @@ function ReportModal({ report: initialReport, user, onClose, onStatusChange, onR
                 onDraftChange={setPartnerCommentDraft}
                 onSave={savePartnerComment}
                 busy={busy}
-                placeholder="Напишите комментарий для частного сектора: что нужно сделать, в какие сроки, какие есть договорённости..."
+                placeholder="Напишите комментарий для подрядчика: что нужно сделать, в какие сроки, какие есть договорённости..."
               />
             </div>
           )}
@@ -401,7 +433,7 @@ function ReportModal({ report: initialReport, user, onClose, onStatusChange, onR
               />
               <RouteButton
                 active={responsibility === 'business'}
-                label="Передать бизнесу"
+                label="Передать подрядчику"
                 color="#0f766e"
                 recommended={aiDossier.suggestedRoleKey === 'business'}
                 onClick={() => routeTo(buildBusinessRouteFields())}
@@ -432,12 +464,221 @@ function Cell({ label, value }) {
   );
 }
 
+function normalizeSeverityKey(value) {
+  const source = String(value ?? '').toLowerCase();
+  if (source.includes('крит') || source === 'critical') return 'critical';
+  if (source.includes('выс') || source === 'high') return 'high';
+  if (source.includes('низ') || source === 'low') return 'low';
+  return 'medium';
+}
+
+function reportAgeHours(report) {
+  if (!report?.created_at) return 0;
+  const createdAt = new Date(report.created_at).getTime();
+  if (!Number.isFinite(createdAt)) return 0;
+  return Math.max(0, Math.round((Date.now() - createdAt) / 3600000));
+}
+
+function controlPriorityScore(report) {
+  const priority = Number(report?.priority_score);
+  const priorityBase = Number.isFinite(priority)
+    ? priority
+    : normalizeSeverityKey(report?.severity) === 'critical'
+      ? 95
+      : normalizeSeverityKey(report?.severity) === 'high'
+        ? 78
+        : normalizeSeverityKey(report?.severity) === 'low'
+          ? 24
+          : 52;
+
+  const statusBonus =
+    report?.status === 'waiting_partner' ? 16
+      : report?.status === 'new' ? 10
+        : report?.status === 'in_progress' ? 4
+          : 0;
+
+  return priorityBase + statusBonus + (report?.duplicate_likely ? 4 : 0);
+}
+
+function buildTodayReactionReason(report) {
+  const severity = normalizeSeverityKey(report?.severity);
+  const ageHours = reportAgeHours(report);
+  const responsibility = getResponsibleRole(report);
+
+  if (report?.status === 'waiting_partner') return 'Ожидает ответа второй стороны';
+  if (severity === 'critical') return 'Критичный кейс требует реакции в текущую смену';
+  if (severity === 'high' && ageHours >= 12) return 'Высокий риск без подтверждённого движения';
+  if (responsibility !== 'government' && !getAssignedOrgName(report)) return 'Нет назначенной организации по внешнему контуру';
+  return 'Требует подтверждения маршрута и исполнителя';
+}
+
+function buildSharedStuckReason(report) {
+  if (!getAssignedOrgName(report)) return 'Shared-case без назначенной организации';
+  if (!report?.partner_comment) return 'Нет координационного комментария';
+  if (report?.status === 'waiting_partner') return 'Кейс завис в ожидании ответа партнёра';
+  return 'Нужна синхронизация между акиматом и подрядчиком';
+}
+
+function buildControlBucket(report) {
+  const responsibility = getResponsibleRole(report);
+  const score = controlPriorityScore(report);
+  const severity = normalizeSeverityKey(report?.severity);
+  const ageHours = reportAgeHours(report);
+  const isReactionToday =
+    report?.status !== 'resolved'
+    && report?.status !== 'verified'
+    && report?.status !== 'rejected'
+    && (
+      report?.status === 'waiting_partner'
+      || severity === 'critical'
+      || (severity === 'high' && (report?.status === 'new' || ageHours >= 12))
+      || (responsibility !== 'government' && !getAssignedOrgName(report))
+    );
+
+  const isSharedStuck =
+    isSharedCase(report)
+    && report?.status !== 'resolved'
+    && report?.status !== 'verified'
+    && report?.status !== 'rejected'
+    && (
+      report?.status === 'waiting_partner'
+      || !getAssignedOrgName(report)
+      || !report?.partner_comment
+    );
+
+  return {
+    isReactionToday,
+    isSharedStuck,
+    score,
+    reasonToday: buildTodayReactionReason(report),
+    reasonShared: buildSharedStuckReason(report),
+  };
+}
+
+function ControlCaseItem({ report, reason, onOpen }) {
+  const responsibility = getResponsibleRole(report);
+  const routeStyle = RESPONSIBILITY_STYLE[responsibility];
+  const severity = normalizeSeverityKey(report?.severity);
+  const ageHours = reportAgeHours(report);
+  const urgencyColor =
+    severity === 'critical' ? '#dc2626'
+      : severity === 'high' ? '#ea580c'
+        : '#2563eb';
+
+  return (
+    <button
+      onClick={() => onOpen?.(report)}
+      style={{
+        width: '100%',
+        textAlign: 'left',
+        background: '#fff',
+        border: '1px solid #e2e8f0',
+        borderRadius: 14,
+        padding: '12px 14px',
+        cursor: 'pointer',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', marginBottom: 8, flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', lineHeight: 1.45 }}>
+            {report.detected_issue_title || report.type || 'Без названия'}
+          </div>
+          <div style={{ fontSize: 12, color: '#64748b', marginTop: 3, lineHeight: 1.55 }}>
+            {report.address || 'Адрес уточняется'}
+          </div>
+        </div>
+        <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 999, background: `${urgencyColor}12`, border: `1px solid ${urgencyColor}30`, color: urgencyColor, padding: '5px 9px', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>
+          {ageHours > 0 ? `${ageHours}ч` : 'сейчас'}
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 999, background: routeStyle.bg, color: routeStyle.color, border: `1px solid ${routeStyle.border}`, padding: '5px 9px', fontSize: 11, fontWeight: 700 }}>
+          {RESPONSIBILITY_LABEL[responsibility]}
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 999, background: ST_BG[report.status] ?? '#f8fafc', color: ST_COLOR[report.status] ?? '#64748b', border: `1px solid ${(ST_COLOR[report.status] ?? '#cbd5e1')}40`, padding: '5px 9px', fontSize: 11, fontWeight: 700 }}>
+          {ST_LABEL[report.status] ?? report.status}
+        </span>
+      </div>
+
+      <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.6, marginBottom: 8 }}>
+        {reason}
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.5 }}>
+          {getReporterName(report)} · {REPORTER_ROLE_LABEL[getReporterRole(report)]}
+        </div>
+        <div style={{ fontSize: 11, color: '#6366f1', fontWeight: 700 }}>
+          Открыть кейс
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function ControlBoard({ reactionToday = [], stuckShared = [], onOpen }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14, marginBottom: 20 }}>
+      <div style={{ background: '#fff', border: '1px solid #e8eaed', borderRadius: 16, padding: '18px 20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>Нужна реакция сегодня</div>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 3 }}>
+              Критичные и зависающие кейсы без подтверждённого движения
+            </div>
+          </div>
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 34, height: 34, borderRadius: 999, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 13, fontWeight: 800 }}>
+            {reactionToday.length}
+          </span>
+        </div>
+
+        {reactionToday.length === 0 ? (
+          <div style={{ borderRadius: 14, border: '1px dashed #d1d5db', background: '#f8fafc', padding: '16px 18px', fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>
+            Сегодня нет кейсов, требующих немедленной реакции.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {reactionToday.map(item => (
+              <ControlCaseItem key={item.report.id} report={item.report} reason={item.reason} onOpen={onOpen} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{ background: '#fff', border: '1px solid #e8eaed', borderRadius: 16, padding: '18px 20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>Зависшие shared-case</div>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 3 }}>
+              Совместные кейсы, где акимату нужно снять блокировку и вернуть движение
+            </div>
+          </div>
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 34, height: 34, borderRadius: 999, background: '#fff7ed', border: '1px solid #fed7aa', color: '#c2410c', fontSize: 13, fontWeight: 800 }}>
+            {stuckShared.length}
+          </span>
+        </div>
+
+        {stuckShared.length === 0 ? (
+          <div style={{ borderRadius: 14, border: '1px dashed #d1d5db', background: '#f8fafc', padding: '16px 18px', fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>
+            Сейчас нет shared-case, требующих ручной координации.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {stuckShared.map(item => (
+              <ControlCaseItem key={item.report.id} report={item.report} reason={item.reason} onOpen={onOpen} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ══════════════════════════════════════════
    MAIN COMPONENT
 ══════════════════════════════════════════ */
-export default function Dashboard({ onTabChange, user, onLogout }) {
-  const [reports,     setReports]     = useState([]);
-  const [loading,     setLoading]     = useState(true);
+export default function Dashboard({ reports = [], analyticsOverview = null, loading = false, onStatusChange, onTabChange, user, onLogout }) {
   const [filterSev,   setFilterSev]   = useState('all');
   const [filterSt,    setFilterSt]    = useState('all');
   const [search,      setSearch]      = useState('');
@@ -450,34 +691,18 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
   const [activeNav,   setActiveNav]   = useState('chart');
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  /* ── Load from Supabase ── */
-  const loadReports = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('reports')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (!error) {
-      setReports(data || []);
+  const refreshReports = useCallback(async () => {
+    await onStatusChange?.();
+  }, [onStatusChange]);
+
+  useEffect(() => {
+    if (!loading) {
       setLastUpdated(new Date());
     }
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { loadReports(); }, [loadReports]);
-
-  /* ── Realtime ── */
-  useEffect(() => {
-    const channel = supabase
-      .channel('dashboard-reports')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, () => {
-        loadReports();
-      })
-      .subscribe();
-    return () => supabase.removeChannel(channel);
-  }, [loadReports]);
+  }, [reports, loading]);
 
   /* ── Access guard ── */
-  if (user?.role !== 'government') {
+  if (user?.role !== 'government' || user?.status !== 'active') {
     return (
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#f4f5f7', gap: 16, fontFamily: "'Inter', system-ui, sans-serif" }}>
         <div style={{ width: 64, height: 64, borderRadius: 16, background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -495,11 +720,87 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
   }
 
   /* ── Stats ── */
-  const total      = reports.length;
-  const newCnt     = reports.filter(r => r.status === 'new').length;
-  const inProgCnt  = reports.filter(r => r.status === 'in_progress').length;
-  const resolvedCnt = reports.filter(r => r.status === 'resolved').length;
-  const criticalCnt = reports.filter(r => r.severity === 'КРИТИЧНО' || r.severity === 'critical').length;
+  const localTotal      = reports.length;
+  const localNewCnt     = reports.filter(r => r.status === 'new').length;
+  const localInProgCnt  = reports.filter(r => r.status === 'in_progress').length;
+  const localResolvedCnt = reports.filter(r => r.status === 'resolved').length;
+  const localCriticalCnt = reports.filter(r => r.severity === 'КРИТИЧНО' || r.severity === 'critical').length;
+
+  /* ── Analytics (for gov dashboard) ── */
+  const localAnalytics = useMemo(() => {
+    const TYPE_LABEL = {
+      road: 'Дороги', lighting: 'Освещение', waste: 'Мусор',
+      greenery: 'Озеленение', utilities: 'Коммуналка', parking: 'Парковка',
+      vandal: 'Вандализм', other: 'Другое',
+    };
+    const TYPE_COLOR = {
+      road: '#ef4444', lighting: '#f59e0b', waste: '#84cc16',
+      greenery: '#22c55e', utilities: '#06b6d4', parking: '#8b5cf6',
+      vandal: '#ec4899', other: '#94a3b8',
+    };
+
+    // By type breakdown
+    const byType = {};
+    reports.forEach(r => {
+      const t = r.type || 'other';
+      if (!byType[t]) byType[t] = { type: t, label: TYPE_LABEL[t] || t, color: TYPE_COLOR[t] || '#94a3b8', total: 0, open: 0, resolved: 0 };
+      byType[t].total += 1;
+      if (r.status === 'resolved' || r.status === 'verified') byType[t].resolved += 1;
+      else byType[t].open += 1;
+    });
+    const typeBreakdown = Object.values(byType).sort((a, b) => b.total - a.total);
+
+    // SLA: avg time to resolve (hours)
+    const resolvedReports = reports.filter(r => r.status === 'resolved' && r.created_at && r.updated_at);
+    let avgResolveHours = 0;
+    if (resolvedReports.length > 0) {
+      const totalHours = resolvedReports.reduce((sum, r) => {
+        return sum + (new Date(r.updated_at) - new Date(r.created_at)) / 3600000;
+      }, 0);
+      avgResolveHours = Math.round(totalHours / resolvedReports.length);
+    }
+
+    // SLA compliance (resolved within 72h)
+    const slaCompliant = resolvedReports.filter(r => {
+      return (new Date(r.updated_at) - new Date(r.created_at)) / 3600000 <= 72;
+    }).length;
+    const slaPercent = resolvedReports.length > 0 ? Math.round((slaCompliant / resolvedReports.length) * 100) : 0;
+
+    // Shared-case stats
+    const sharedCnt = reports.filter(r => r.responsible_role === 'shared' || r.shared_case).length;
+    const sharedOpen = reports.filter(r => (r.responsible_role === 'shared' || r.shared_case) && r.status !== 'resolved' && r.status !== 'verified').length;
+    const waitingPartner = reports.filter(r => r.status === 'waiting_partner').length;
+
+    // Route distribution
+    const govRoute = reports.filter(r => r.responsible_role === 'government' || (!r.responsible_role && !r.shared_case)).length;
+    const busRoute = reports.filter(r => r.responsible_role === 'business').length;
+
+    return { typeBreakdown, avgResolveHours, slaPercent, slaCompliant, resolvedCount: resolvedReports.length, sharedCnt, sharedOpen, waitingPartner, govRoute, busRoute };
+  }, [reports]);
+
+  const total = analyticsOverview?.total ?? localTotal;
+  const newCnt = analyticsOverview?.newCnt ?? localNewCnt;
+  const inProgCnt = analyticsOverview?.inProgCnt ?? localInProgCnt;
+  const resolvedCnt = analyticsOverview?.resolvedCnt ?? localResolvedCnt;
+  const criticalCnt = analyticsOverview?.criticalCnt ?? localCriticalCnt;
+  const analytics = analyticsOverview
+    ? {
+        typeBreakdown: analyticsOverview.typeBreakdown ?? analyticsOverview.type_breakdown ?? [],
+        avgResolveHours: analyticsOverview.avgResolveHours ?? 0,
+        slaPercent: analyticsOverview.slaPercent ?? 0,
+        slaCompliant: analyticsOverview.slaCompliant ?? 0,
+        resolvedCount: analyticsOverview.resolvedCount ?? 0,
+        sharedCnt: analyticsOverview.sharedCnt ?? 0,
+        sharedOpen: analyticsOverview.sharedOpen ?? 0,
+        waitingPartner: analyticsOverview.waitingPartner ?? 0,
+        govRoute: analyticsOverview.govRoute ?? analyticsOverview.route_breakdown?.government ?? 0,
+        busRoute: analyticsOverview.busRoute ?? analyticsOverview.route_breakdown?.business ?? 0,
+        hotspots: analyticsOverview.hotspots ?? [],
+      }
+    : {
+        ...localAnalytics,
+        hotspots: [],
+      };
 
   /* ── Filtered table ── */
   const tableRows = useMemo(() => reports.filter(r => {
@@ -525,6 +826,18 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
       setAssistantReport(refreshed);
     }
   }, [reports, assistantReport?.id]);
+
+  useEffect(() => {
+    if (!selected?.id) return;
+    const refreshed = reports.find(report => report.id === selected.id);
+    if (!refreshed) {
+      setSelected(null);
+      return;
+    }
+    if (refreshed !== selected) {
+      setSelected(refreshed);
+    }
+  }, [reports, selected?.id]);
 
   const loadAssistant = useCallback(async (reportOverride = assistantReport) => {
     setAssistantLoading(true);
@@ -578,7 +891,7 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
       if (selected?.id === updated.id) {
         setSelected(updated);
       }
-      await loadReports();
+      await refreshReports();
       await loadAssistant(updated);
     } catch (error) {
       setAssistantError(error.message);
@@ -595,7 +908,27 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
     setSelected(fullReport);
   }
 
-  const chartData = buildChartData(reports);
+  const chartData = analyticsOverview?.trend?.length ? analyticsOverview.trend : buildChartData(reports);
+  const assistantPanelData = assistantData?.mode === 'dashboard_overview' && analytics.hotspots?.length
+    ? { ...assistantData, hotspots: analytics.hotspots }
+    : assistantData;
+  const controlBoardData = useMemo(() => {
+    const buckets = reports
+      .map(report => ({ report, meta: buildControlBucket(report) }))
+      .sort((left, right) => right.meta.score - left.meta.score);
+
+    const reactionToday = buckets
+      .filter(item => item.meta.isReactionToday)
+      .slice(0, 4)
+      .map(item => ({ report: item.report, reason: item.meta.reasonToday }));
+
+    const stuckShared = buckets
+      .filter(item => item.meta.isSharedStuck)
+      .slice(0, 4)
+      .map(item => ({ report: item.report, reason: item.meta.reasonShared }));
+
+    return { reactionToday, stuckShared };
+  }, [reports]);
 
   const sideNavItems = [
     { id: 'map',   icon: 'map',   label: 'Карта' },
@@ -645,7 +978,7 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
             <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>Live</span>
           </div>
 
-          <button onClick={loadReports} style={{ width: 36, height: 36, borderRadius: 9, background: '#f4f5f7', border: '1px solid #e8eaed', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <button onClick={refreshReports} style={{ width: 36, height: 36, borderRadius: 9, background: '#f4f5f7', border: '1px solid #e8eaed', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <Icon n="refresh" size={15} color="#64748b" />
           </button>
 
@@ -690,7 +1023,7 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
           </div>
 
           <AkimatAssistantPanel
-            data={assistantData}
+            data={assistantPanelData}
             loading={assistantLoading}
             error={assistantError}
             focusedReport={assistantReport}
@@ -699,6 +1032,12 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
             onApplyRoute={applyAssistantRoute}
             onClearFocus={() => setAssistantReport(null)}
             onOpenReport={openReportFromAssistant}
+          />
+
+          <ControlBoard
+            reactionToday={controlBoardData.reactionToday}
+            stuckShared={controlBoardData.stuckShared}
+            onOpen={openReportFromAssistant}
           />
 
           {/* ── Chart ── */}
@@ -737,6 +1076,93 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
                 <Area type="monotone" dataKey="resolved" name="Решённые"  stroke="#22c55e" strokeWidth={2} fill="url(#gRes)" dot={false} activeDot={{ r: 4, fill: '#22c55e' }} />
               </AreaChart>
             </ResponsiveContainer>
+          </div>
+
+          {/* ── Analytics Section ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 20 }}>
+
+            {/* By Type Breakdown */}
+            <div style={{ background: '#fff', border: '1px solid #e8eaed', borderRadius: 16, padding: '20px' }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>Breakdown по типам</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 14 }}>Распределение кейсов по категориям</div>
+              {analytics.typeBreakdown.map(t => (
+                <div key={t.type} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 3, background: t.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, color: '#0f172a', fontWeight: 500, flex: 1 }}>{t.label}</span>
+                  <span style={{ fontSize: 12, color: '#64748b', minWidth: 30, textAlign: 'right' }}>{t.total}</span>
+                  <div style={{ width: 80, height: 6, borderRadius: 3, background: '#f1f5f9', overflow: 'hidden' }}>
+                    <div style={{ width: `${total > 0 ? (t.total / total) * 100 : 0}%`, height: '100%', background: t.color, borderRadius: 3 }} />
+                  </div>
+                  <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 600, minWidth: 35, textAlign: 'right' }}>
+                    {t.resolved}/{t.total}
+                  </span>
+                </div>
+              ))}
+              {analytics.typeBreakdown.length === 0 && (
+                <div style={{ fontSize: 13, color: '#94a3b8', textAlign: 'center', padding: 20 }}>Нет данных</div>
+              )}
+            </div>
+
+            {/* SLA & Route Analytics */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+              {/* SLA Card */}
+              <div style={{ background: '#fff', border: '1px solid #e8eaed', borderRadius: 16, padding: '20px', flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', marginBottom: 14 }}>SLA Performance</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 28, fontWeight: 800, color: analytics.slaPercent >= 70 ? '#22c55e' : analytics.slaPercent >= 40 ? '#f59e0b' : '#ef4444' }}>
+                      {analytics.slaPercent}%
+                    </div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>SLA compliance (72ч)</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 28, fontWeight: 800, color: '#0f172a' }}>
+                      {analytics.avgResolveHours}<span style={{ fontSize: 14, color: '#94a3b8' }}>ч</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Среднее время закрытия</div>
+                  </div>
+                </div>
+                <div style={{ marginTop: 12, height: 6, borderRadius: 3, background: '#f1f5f9', overflow: 'hidden' }}>
+                  <div style={{
+                    width: `${analytics.slaPercent}%`, height: '100%', borderRadius: 3,
+                    background: analytics.slaPercent >= 70 ? '#22c55e' : analytics.slaPercent >= 40 ? '#f59e0b' : '#ef4444',
+                  }} />
+                </div>
+                <div style={{ fontSize: 11, color: '#64748b', marginTop: 6 }}>
+                  {analytics.slaCompliant} из {analytics.resolvedCount} закрыты в рамках SLA
+                </div>
+              </div>
+
+              {/* Route Distribution */}
+              <div style={{ background: '#fff', border: '1px solid #e8eaed', borderRadius: 16, padding: '20px', flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', marginBottom: 14 }}>Маршрутизация</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {[
+                    { label: 'Акимат', count: analytics.govRoute, color: '#6366f1', bg: '#eef2ff' },
+                    { label: 'Shared', count: analytics.sharedCnt, color: '#a16207', bg: '#fef3c7' },
+                    { label: 'Подрядчик', count: analytics.busRoute, color: '#0f766e', bg: '#ccfbf1' },
+                  ].map(r => (
+                    <div key={r.label} style={{
+                      flex: 1, textAlign: 'center', padding: '12px 8px', borderRadius: 12,
+                      background: r.bg, border: `1px solid ${r.color}25`,
+                    }}>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: r.color }}>{r.count}</div>
+                      <div style={{ fontSize: 11, color: r.color, fontWeight: 600, marginTop: 2 }}>{r.label}</div>
+                    </div>
+                  ))}
+                </div>
+                {analytics.waitingPartner > 0 && (
+                  <div style={{
+                    marginTop: 10, padding: '8px 12px', borderRadius: 8,
+                    background: '#fef2f2', border: '1px solid #fecaca',
+                    fontSize: 12, color: '#dc2626', fontWeight: 600,
+                  }}>
+                    {analytics.waitingPartner} кейсов ждут ответа партнёра
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* ── Table ── */}
@@ -916,7 +1342,7 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
                           {/* Quick action */}
                           <td style={{ padding: '10px 14px' }} onClick={e => e.stopPropagation()}>
                             {next && (
-                              <QuickAction reportId={r.id} current={r.status} next={next} onDone={loadReports} />
+                              <QuickAction reportId={r.id} current={r.status} next={next} onDone={refreshReports} />
                             )}
                           </td>
                         </tr>
@@ -928,27 +1354,36 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
             )}
           </div>
 
-          {/* ── Districts ── */}
-          <div style={{ background: '#fff', border: '1px solid #e8eaed', borderRadius: 16, padding: '20px 24px', marginTop: 20 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', marginBottom: 3 }}>Рейтинг районов</div>
-            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 18 }}>Эффективность устранения проблем</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 40px' }}>
-              {DISTRICTS.map((d, i) => {
-                const color = d.score >= 80 ? '#22c55e' : d.score >= 55 ? '#f59e0b' : '#ef4444';
-                return (
-                  <div key={d.name}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                      <span style={{ fontSize: 13, color: '#64748b' }}>{d.name}</span>
-                      <span style={{ fontSize: 11, fontWeight: 700, color }}>{d.score}%</span>
-                    </div>
-                    <div style={{ height: 4, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${d.score}%`, background: color, borderRadius: 4, transition: `width ${0.8 + i * 0.06}s ease` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          {/* ── Districts (computed from real data) ── */}
+          {(() => {
+            const districts = analyticsOverview?.districtBreakdown ?? analyticsOverview?.district_breakdown ?? computeDistricts(reports);
+            if (districts.length === 0) return null;
+            return (
+              <div style={{ background: '#fff', border: '1px solid #e8eaed', borderRadius: 16, padding: '20px 24px', marginTop: 20 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', marginBottom: 3 }}>Рейтинг районов</div>
+                <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 18 }}>Эффективность устранения (% решённых от общего)</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 40px' }}>
+                  {districts.map((district, i) => {
+                    const name = district.name ?? district.district;
+                    const totalCases = district.total ?? 0;
+                    const score = district.score ?? 0;
+                    const color = score >= 80 ? '#22c55e' : score >= 55 ? '#f59e0b' : '#ef4444';
+                    return (
+                      <div key={name}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                          <span style={{ fontSize: 13, color: '#64748b' }}>{name} <span style={{ fontSize: 10, color: '#cbd5e1' }}>({totalCases})</span></span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color }}>{score}%</span>
+                        </div>
+                        <div style={{ height: 4, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${score}%`, background: color, borderRadius: 4, transition: `width ${0.8 + i * 0.06}s ease` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
         </div>
       </div>
@@ -959,8 +1394,8 @@ export default function Dashboard({ onTabChange, user, onLogout }) {
           report={selected}
           user={user}
           onClose={() => setSelected(null)}
-          onStatusChange={() => { loadReports(); setSelected(null); }}
-          onRefresh={loadReports}
+          onStatusChange={() => { refreshReports(); setSelected(null); }}
+          onRefresh={refreshReports}
         />
       )}
 

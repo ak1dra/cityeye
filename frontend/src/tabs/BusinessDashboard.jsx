@@ -1,22 +1,45 @@
-import { useRef, useState } from 'react';
-import { Building2, Camera, CheckCircle2, CircleAlert, LogOut, Map, Newspaper, RefreshCw, Wrench } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
+import {
+  ArrowRight,
+  Building2,
+  Camera,
+  CheckCircle2,
+  CircleAlert,
+  Clock3,
+  Handshake,
+  RefreshCw,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+  Wrench,
+} from 'lucide-react';
 import { AITriagePanel } from '../components/AITriagePanel';
 import { CollaborationTimeline, PartnerCommentBox } from '../components/CollaborationWidgets';
 import { GlassCard, GlassPanel } from '../components/GlassPanel';
+import { VerifyBadge } from '../components/VerifyBadge';
 import { supabase } from '../lib/supabase';
 import { updateReport, updateStatus } from '../api';
+import {
+  getContractorOrgName,
+  getDeadlineState,
+  getLiabilityNarrative,
+  getNextRequiredAction,
+  getProofStatusMeta,
+  getResponsibilityModeMeta,
+  getWorkOrderStatusMeta,
+  inferProofStatus,
+  inferResponsibilityMode,
+  inferWorkOrderStatus,
+} from '../lib/contractorModel';
 import {
   buildPartnerCommentEntry,
   buildSharedRouteFields,
   getAssignedOrgName,
-  getReporterName,
-  getReporterRole,
   getResponsibleRole,
   isSharedCase,
   isVisibleToBusiness,
-  REPORTER_ROLE_LABEL,
   RESPONSIBILITY_LABEL,
-  RESPONSIBILITY_STYLE,
 } from '../lib/reportCollaboration';
 
 const CATEGORY_LABEL = {
@@ -24,42 +47,166 @@ const CATEGORY_LABEL = {
   light: 'Освещение',
   lighting: 'Освещение',
   trash: 'Мусор',
-  waste: 'Мусор',
+  waste: 'Санитария',
   greenery: 'Озеленение',
   utilities: 'Коммуникации',
   vandal: 'Вандализм',
   parking: 'Парковка',
-  other: 'Другое',
-};
-
-const STATUS_META = {
-  new: { label: 'Новый', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' },
-  in_progress: { label: 'В работе', color: '#d97706', bg: '#fff7ed', border: '#fed7aa' },
-  resolved: { label: 'Решено', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
-  rejected: { label: 'Отклонён', color: '#94a3b8', bg: '#f8fafc', border: '#e2e8f0' },
+  other: 'Инфраструктура',
 };
 
 const SEVERITY_META = {
-  critical: { label: 'Критично', color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
-  high: { label: 'Высокий', color: '#d97706', bg: '#fff7ed', border: '#fed7aa' },
-  medium: { label: 'Средний', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' },
-  low: { label: 'Низкий', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
-  КРИТИЧНО: { label: 'Критично', color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
-  ВЫСОКО: { label: 'Высокий', color: '#d97706', bg: '#fff7ed', border: '#fed7aa' },
-  СРЕДНЕ: { label: 'Средний', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' },
-  НИЗКО: { label: 'Низкий', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
+  critical: { label: 'Критично', variant: 'critical' },
+  high: { label: 'Высокий', variant: 'high' },
+  medium: { label: 'Средний', variant: 'medium' },
+  low: { label: 'Низкий', variant: 'neutral' },
 };
 
-const NAV_ITEMS = [
-  { id: 'map', label: 'Карта', icon: Map },
-  { id: 'feed', label: 'Лента', icon: Newspaper },
-  { id: 'report', label: 'Репорт', icon: Camera },
-  { id: 'business', label: 'Бизнес', icon: Building2 },
+const QUEUE_META = {
+  all: { label: 'Все задания', icon: Sparkles, variant: 'dark' },
+  assigned: { label: 'Новые назначения', icon: ShieldAlert, variant: 'medium' },
+  accepted: { label: 'В работе', icon: Wrench, variant: 'high' },
+  blocked: { label: 'Ждёт акимат', icon: Handshake, variant: 'violet' },
+  disputed: { label: 'Спорные', icon: CircleAlert, variant: 'critical' },
+  completed: { label: 'На verify', icon: ShieldCheck, variant: 'soft-success' },
+  verified: { label: 'Закрыто', icon: CheckCircle2, variant: 'success' },
+};
+
+const MODE_FILTERS = [
+  { id: 'all', label: 'Все контуры', variant: 'dark' },
+  { id: 'warranty_contractor', label: 'Гарантия', variant: 'success' },
+  { id: 'operator', label: 'Эксплуатация', variant: 'sky' },
+  { id: 'shared', label: 'Совместно', variant: 'high' },
+  { id: 'disputed', label: 'Спорные', variant: 'critical' },
 ];
 
-export default function BusinessDashboard({ reports = [], user, onTabChange, onLogout, onStatusChange }) {
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [filterSeverity, setFilterSeverity] = useState('all');
+const SEVERITY_FILTERS = [
+  { id: 'all', label: 'Все приоритеты', variant: 'dark' },
+  { id: 'critical', label: 'Критично', variant: 'critical' },
+  { id: 'high', label: 'Высокий', variant: 'high' },
+  { id: 'medium', label: 'Средний', variant: 'medium' },
+  { id: 'low', label: 'Низкий', variant: 'neutral' },
+];
+
+function cx(...parts) {
+  return parts.filter(Boolean).join(' ');
+}
+
+function normalizeSeverity(value) {
+  if (value === 'КРИТИЧНО') return 'critical';
+  if (value === 'ВЫСОКО') return 'high';
+  if (value === 'СРЕДНЕ') return 'medium';
+  if (value === 'НИЗКО') return 'low';
+  return value ?? 'medium';
+}
+
+function getSeverityMeta(value) {
+  const normalized = normalizeSeverity(value);
+  return SEVERITY_META[normalized] ?? { label: value ?? '—', variant: 'neutral' };
+}
+
+function getCategoryLabel(report) {
+  return CATEGORY_LABEL[report?.category] ?? CATEGORY_LABEL[report?.type] ?? 'Инфраструктура';
+}
+
+function getReportTitle(report) {
+  return report?.detected_issue_title || report?.title || getCategoryLabel(report);
+}
+
+function getPrimaryImage(report) {
+  return report?.image_url || report?.image || null;
+}
+
+function formatDateTime(value) {
+  if (!value) return 'Не указано';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Не указано';
+  return date.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatDateOnly(value) {
+  if (!value) return 'Не указано';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Не указано';
+  return date.toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
+function getDeadlineVariant(tone) {
+  if (tone === 'overdue') return 'critical';
+  if (tone === 'risk') return 'high';
+  if (tone === 'ok') return 'success';
+  return 'neutral';
+}
+
+function getWorkOrderVariant(status) {
+  if (status === 'verified') return 'success';
+  if (status === 'completed') return 'soft-success';
+  if (status === 'blocked') return 'violet';
+  if (status === 'disputed') return 'critical';
+  if (status === 'accepted') return 'high';
+  return 'medium';
+}
+
+function getResponsibilityVariant(mode) {
+  if (mode === 'warranty_contractor') return 'success';
+  if (mode === 'operator') return 'sky';
+  if (mode === 'shared') return 'high';
+  if (mode === 'disputed') return 'critical';
+  return 'neutral';
+}
+
+function getProofVariant(status) {
+  if (status === 'verified') return 'success';
+  if (status === 'uploaded') return 'medium';
+  if (status === 'required') return 'high';
+  return 'neutral';
+}
+
+function badgeClasses(variant = 'neutral') {
+  return {
+    neutral: 'border-slate-200 bg-slate-50 text-slate-700',
+    medium: 'border-blue-200 bg-blue-50 text-blue-700',
+    high: 'border-amber-200 bg-amber-50 text-amber-800',
+    critical: 'border-rose-200 bg-rose-50 text-rose-700',
+    success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    'soft-success': 'border-emerald-100 bg-emerald-50/70 text-emerald-700',
+    sky: 'border-sky-200 bg-sky-50 text-sky-700',
+    violet: 'border-violet-200 bg-violet-50 text-violet-700',
+    dark: 'border-slate-900 bg-slate-900 text-white',
+  }[variant] || 'border-slate-200 bg-slate-50 text-slate-700';
+}
+
+function metricClasses(tone) {
+  return {
+    neutral: 'border-white/85 bg-white/82 text-slate-950',
+    alert: 'border-rose-100 bg-rose-50/90 text-rose-700',
+    blocked: 'border-violet-100 bg-violet-50/90 text-violet-700',
+    done: 'border-emerald-100 bg-emerald-50/90 text-emerald-700',
+  }[tone];
+}
+
+function actionButtonClasses(kind = 'secondary') {
+  return {
+    primary: 'inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_14px_30px_rgba(15,23,42,0.12)] transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-45',
+    secondary: 'inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-[13px] font-semibold text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45',
+    warning: 'inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-[13px] font-semibold text-amber-900 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-45',
+  }[kind];
+}
+
+export default function BusinessDashboard({ reports = [], user, onTabChange, onStatusChange }) {
+  const [queueFilter, setQueueFilter] = useState('all');
+  const [modeFilter, setModeFilter] = useState('all');
+  const [severityFilter, setSeverityFilter] = useState('all');
+  const [selectedReportId, setSelectedReportId] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState(null);
   const [completionFiles, setCompletionFiles] = useState({});
@@ -68,29 +215,80 @@ export default function BusinessDashboard({ reports = [], user, onTabChange, onL
 
   const fileInputs = useRef({});
 
-  if (user?.role !== 'business') {
-    return (
-      <AccessDenied onBack={() => onTabChange?.('map')} />
-    );
+  if (user?.role !== 'business' || user?.status !== 'active') {
+    return <AccessDenied onBack={() => onTabChange?.('map')} />;
   }
 
-  const ownReports = [...reports]
-    .filter(report => isVisibleToBusiness(report, user))
-    .sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime());
+  const ownReports = useMemo(
+    () => [...reports]
+      .filter(report => isVisibleToBusiness(report, user))
+      .sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()),
+    [reports, user]
+  );
 
-  const filteredReports = ownReports.filter(report => {
-    const statusMatch = filterStatus === 'all' || report.status === filterStatus;
-    const severityMatch = filterSeverity === 'all' || report.severity === filterSeverity;
-    return statusMatch && severityMatch;
-  });
+  const filteredReports = useMemo(
+    () => ownReports.filter(report => {
+      const queueKey = inferWorkOrderStatus(report);
+      const responsibilityMode = inferResponsibilityMode(report);
+      const severityKey = normalizeSeverity(report.severity);
+      const severityMatch = severityFilter === 'all' || severityKey === severityFilter;
+      const queueMatch = queueFilter === 'all' || queueKey === queueFilter;
+      const modeMatch = modeFilter === 'all' || responsibilityMode === modeFilter;
+      return severityMatch && queueMatch && modeMatch;
+    }),
+    [modeFilter, ownReports, queueFilter, severityFilter]
+  );
 
-  const stats = {
-    total: ownReports.length,
-    new: ownReports.filter(report => report.status === 'new').length,
-    inProgress: ownReports.filter(report => report.status === 'in_progress').length,
-    resolved: ownReports.filter(report => report.status === 'resolved').length,
-  };
-  const sharedCount = ownReports.filter(report => isSharedCase(report)).length;
+  useEffect(() => {
+    if (filteredReports.length === 0) {
+      if (selectedReportId !== null) setSelectedReportId(null);
+      return;
+    }
+
+    if (!filteredReports.some(report => report.id === selectedReportId)) {
+      setSelectedReportId(filteredReports[0].id);
+    }
+  }, [filteredReports, selectedReportId]);
+
+  const selectedReport = useMemo(
+    () => filteredReports.find(report => report.id === selectedReportId) ?? filteredReports[0] ?? null,
+    [filteredReports, selectedReportId]
+  );
+
+  const queueCounts = useMemo(
+    () => Object.keys(QUEUE_META).reduce((accumulator, key) => {
+      accumulator[key] = key === 'all'
+        ? ownReports.length
+        : ownReports.filter(report => inferWorkOrderStatus(report) === key).length;
+      return accumulator;
+    }, {}),
+    [ownReports]
+  );
+
+  const stats = useMemo(() => {
+    const activeReports = ownReports.filter(report => ['assigned', 'accepted', 'blocked', 'disputed'].includes(inferWorkOrderStatus(report)));
+    const blockedReports = ownReports.filter(report => inferWorkOrderStatus(report) === 'blocked');
+    const disputedReports = ownReports.filter(report => inferWorkOrderStatus(report) === 'disputed');
+    const verifyQueue = ownReports.filter(report => ['completed', 'verified'].includes(inferWorkOrderStatus(report)));
+    const slaRisk = ownReports.filter(report => {
+      const deadline = getDeadlineState(report);
+      return deadline.tone === 'risk' || deadline.tone === 'overdue';
+    });
+    const verifiedCount = ownReports.filter(report => inferWorkOrderStatus(report) === 'verified').length;
+    const completedCount = ownReports.filter(report => ['completed', 'verified'].includes(inferWorkOrderStatus(report))).length;
+    const verifyRate = completedCount > 0 ? Math.round((verifiedCount / completedCount) * 100) : 0;
+
+    return {
+      total: ownReports.length,
+      active: activeReports.length,
+      slaRisk: slaRisk.length,
+      blocked: blockedReports.length,
+      disputed: disputedReports.length,
+      verifyQueue: verifyQueue.length,
+      shared: ownReports.filter(report => inferResponsibilityMode(report) === 'shared').length,
+      verifyRate,
+    };
+  }, [ownReports]);
 
   function handleCompletionFileChange(reportId, event) {
     const file = event.target.files?.[0] ?? null;
@@ -133,14 +331,35 @@ export default function BusinessDashboard({ reports = [], user, onTabChange, onL
     if (fileInputs.current[reportId]) fileInputs.current[reportId].value = '';
   }
 
-  async function moveToWork(reportId) {
-    setBusyId(reportId);
+  async function acceptWork(report) {
+    setBusyId(report.id);
     setError(null);
     try {
-      await updateStatus(reportId, 'in_progress');
+      await updateStatus(report.id, 'in_progress', {
+        contractor_org_name: getContractorOrgName(report) || user.name,
+        work_order_status: 'accepted',
+        proof_status: report.completion_image_url ? 'uploaded' : 'required',
+      });
       await onStatusChange?.();
-    } catch (err) {
-      setError(err.message);
+    } catch (nextError) {
+      setError(nextError.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function markBlocked(report, disputed = false) {
+    setBusyId(report.id);
+    setError(null);
+    try {
+      await updateReport(report.id, {
+        status: 'waiting_partner',
+        work_order_status: disputed ? 'disputed' : 'blocked',
+        responsibility_mode: disputed ? 'disputed' : inferResponsibilityMode(report),
+      });
+      await onStatusChange?.();
+    } catch (nextError) {
+      setError(nextError.message);
     } finally {
       setBusyId(null);
     }
@@ -151,7 +370,7 @@ export default function BusinessDashboard({ reports = [], user, onTabChange, onL
     const existingCompletionImage = report.completion_image_url ?? null;
 
     if (!completionFile && !existingCompletionImage) {
-      setError('Для завершения заявки сначала загрузите фото результата.');
+      setError('Для передачи кейса на verify сначала загрузите итоговое фото.');
       return;
     }
 
@@ -178,24 +397,31 @@ export default function BusinessDashboard({ reports = [], user, onTabChange, onL
 
       await updateStatus(report.id, 'resolved', {
         completion_image_url: completionImageUrl,
+        contractor_org_name: getContractorOrgName(report) || user.name,
+        work_order_status: 'completed',
+        proof_status: 'uploaded',
       });
       clearCompletionDraft(report.id);
       await onStatusChange?.();
-    } catch (err) {
-      setError(err.message);
+    } catch (nextError) {
+      setError(nextError.message);
     } finally {
       setBusyId(null);
     }
   }
 
-  async function enableSharedWork(reportId) {
-    setBusyId(reportId);
+  async function enableSharedWork(report) {
+    setBusyId(report.id);
     setError(null);
     try {
-      await updateReport(reportId, buildSharedRouteFields(user.name));
+      await updateReport(report.id, {
+        ...buildSharedRouteFields(user.name),
+        responsibility_mode: 'shared',
+        work_order_status: 'blocked',
+      });
       await onStatusChange?.();
-    } catch (err) {
-      setError(err.message);
+    } catch (nextError) {
+      setError(nextError.message);
     } finally {
       setBusyId(null);
     }
@@ -217,159 +443,256 @@ export default function BusinessDashboard({ reports = [], user, onTabChange, onL
         return next;
       });
       await onStatusChange?.();
-    } catch (err) {
-      setError(err.message);
+    } catch (nextError) {
+      setError(nextError.message);
     } finally {
       setBusyId(null);
     }
   }
 
   return (
-    <div style={{ height: '100vh', display: 'flex', overflow: 'hidden', background: '#f4f7f6', fontFamily: "'DM Sans', system-ui, sans-serif" }}>
-      <aside style={{ width: 76, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 0', background: '#fff', borderRight: '1px solid #e2e8e0' }}>
-        <div style={{ width: 42, height: 42, borderRadius: 14, background: 'linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 28, boxShadow: '0 8px 20px rgba(15,118,110,0.24)' }}>
-          <Building2 size={18} color="#fff" />
-        </div>
+    <div className="relative mx-auto w-full max-w-[1540px] px-4 py-6 xl:px-6">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[320px] rounded-[44px] bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.16),transparent_36%),radial-gradient(circle_at_top_right,rgba(14,165,233,0.14),transparent_32%),radial-gradient(circle_at_center,rgba(255,255,255,0.96),transparent_68%)] blur-3xl" />
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', alignItems: 'center' }}>
-          {NAV_ITEMS.map(item => {
-            const Icon = item.icon;
-            const active = item.id === 'business';
-            return (
-              <button
-                key={item.id}
-                onClick={() => onTabChange?.(item.id)}
-                title={item.label}
-                style={{
-                  width: 46,
-                  height: 46,
-                  borderRadius: 12,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: active ? 'rgba(15,118,110,0.1)' : 'transparent',
-                  border: 'none',
-                  color: active ? '#0f766e' : '#94a3b8',
-                }}
-              >
-                <Icon size={18} />
-              </button>
-            );
-          })}
-        </div>
-
-        <div style={{ flex: 1 }} />
-
-        <button onClick={onLogout} title="Выйти" style={{ width: 46, height: 46, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: '#94a3b8' }}>
-          <LogOut size={18} />
-        </button>
-      </aside>
-
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <header style={{ height: 72, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14, padding: '0 24px', background: 'rgba(255,255,255,0.92)', borderBottom: '1px solid #e2e8e0', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#0f172a' }}>Кабинет частного сектора</div>
-            <div style={{ fontSize: 12, color: '#64748b' }}>Свои и совместные заявки с акиматом · {sharedCount} совместных кейсов</div>
-          </div>
-
-          <div style={{ flex: 1 }} />
-
-          <button onClick={() => onStatusChange?.()} style={{ width: 38, height: 38, borderRadius: 10, border: '1px solid #d5dfdb', background: '#f8faf9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0f766e' }}>
-            <RefreshCw size={16} />
-          </button>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 14px 6px 6px', borderRadius: 999, border: '1px solid rgba(15,118,110,0.14)', background: 'rgba(15,118,110,0.05)' }}>
-            <div style={{ width: 38, height: 38, borderRadius: '50%', background: '#ccfbf1', border: '2px solid #14b8a6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0f766e', fontSize: 13, fontWeight: 700 }}>
-              {user.initials}
-            </div>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{user.name}</div>
-              <div style={{ fontSize: 11, color: '#0f766e', fontWeight: 600 }}>{user.position}</div>
-            </div>
-          </div>
-        </header>
-
-        <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 36px' }}>
-          {error && (
-            <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, borderRadius: 12, border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', padding: '12px 14px' }}>
-              <CircleAlert size={16} />
-              <span style={{ fontSize: 14 }}>{error}</span>
-            </div>
-          )}
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 20 }}>
-            <MetricCard title="Всего" value={stats.total} tone="neutral" />
-            <MetricCard title="Новые" value={stats.new} tone="new" />
-            <MetricCard title="В работе" value={stats.inProgress} tone="work" />
-            <MetricCard title="Решены" value={stats.resolved} tone="done" />
-          </div>
-
-          <GlassPanel style={{ padding: 16, marginBottom: 18 }}>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ minWidth: 180 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>Статус</div>
-                <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-                  <option value="all">Все статусы</option>
-                  <option value="new">Новые</option>
-                  <option value="in_progress">В работе</option>
-                  <option value="resolved">Решены</option>
-                  <option value="rejected">Отклонены</option>
-                </select>
+      <div className="relative grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
+        <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
+          <GlassPanel className="overflow-hidden rounded-[36px] border-white/85 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.14),transparent_36%),linear-gradient(180deg,rgba(255,255,255,0.94),rgba(248,250,248,0.84))] p-0 shadow-[0_28px_74px_rgba(15,23,42,0.06)]">
+            <div className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[22px] bg-slate-950 text-white shadow-[0_16px_30px_rgba(15,23,42,0.14)]">
+                  <Building2 size={24} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    Execution Workspace
+                  </div>
+                  <div className="mt-2 text-[26px] font-bold tracking-[-0.05em] text-slate-950">
+                    {user.name}
+                  </div>
+                  <div className="mt-2 text-sm leading-6 text-slate-600">
+                    {user.position || 'Подрядчик городской инфраструктуры'}
+                  </div>
+                  <div className="mt-4 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-700">
+                    ТОО подключено к рабочему контуру акимата
+                  </div>
+                </div>
               </div>
+            </div>
 
-              <div style={{ minWidth: 180 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>Приоритет</div>
-                <select value={filterSeverity} onChange={e => setFilterSeverity(e.target.value)}>
-                  <option value="all">Все приоритеты</option>
-                  <option value="critical">Критично</option>
-                  <option value="high">Высокий</option>
-                  <option value="medium">Средний</option>
-                  <option value="low">Низкий</option>
-                  <option value="КРИТИЧНО">Критично (legacy)</option>
-                  <option value="ВЫСОКО">Высокий (legacy)</option>
-                  <option value="СРЕДНЕ">Средний (legacy)</option>
-                  <option value="НИЗКО">Низкий (legacy)</option>
-                </select>
-              </div>
+            <div className="grid grid-cols-2 gap-3 border-t border-white/70 bg-white/55 p-4">
+              <MetricCard title="Активно" value={stats.active} hint="live work orders" tone="neutral" />
+              <MetricCard title="SLA риск" value={stats.slaRisk} hint="нужна реакция" tone="alert" />
+              <MetricCard title="Ждёт акимат" value={stats.blocked} hint="есть блокеры" tone="blocked" />
+              <MetricCard title="Verify rate" value={`${stats.verifyRate}%`} hint="подтверждено" tone="done" />
+            </div>
+          </GlassPanel>
 
-              <div style={{ marginLeft: 'auto', fontSize: 13, color: '#64748b' }}>
-                {filteredReports.length} из {ownReports.length} заявок
+          <GlassPanel className="rounded-[32px] border-white/85 bg-white/72 p-5 shadow-[0_20px_54px_rgba(15,23,42,0.05)]">
+            <SectionLabel>Контур исполнения</SectionLabel>
+            <div className="mt-3 grid gap-3">
+              <RailNote
+                label="Гарантия"
+                text="Если актив ещё в гарантийном сроке, кейс автоматически выглядит как work order подрядчика."
+                variant="success"
+              />
+              <RailNote
+                label="Эксплуатация"
+                text="После гарантии ТОО работает как сервисный оператор по своей зоне и типу актива."
+                variant="sky"
+              />
+              <RailNote
+                label="Shared-case"
+                text="При спорной или общей зоне ответственности подрядчик и акимат держат единый рабочий контур."
+                variant="high"
+              />
+            </div>
+          </GlassPanel>
+
+          <GlassPanel className="rounded-[32px] border-white/85 bg-white/72 p-5 shadow-[0_20px_54px_rgba(15,23,42,0.05)]">
+            <SectionLabel>Фокус смены</SectionLabel>
+            <div className="mt-3 grid gap-3">
+              <FocusItem
+                label="Всего work orders"
+                value={stats.total}
+                hint="видно в contractor queue"
+                variant="neutral"
+              />
+              <FocusItem
+                label="Shared-case"
+                value={stats.shared}
+                hint="нужна синхронизация с акиматом"
+                variant="high"
+              />
+              <FocusItem
+                label="На verify / спорные"
+                value={`${stats.verifyQueue} / ${stats.disputed}`}
+                hint="proof и контур ответственности"
+                variant="violet"
+              />
+            </div>
+          </GlassPanel>
+        </aside>
+
+        <section className="min-w-0 space-y-5">
+          <GlassPanel className="overflow-hidden rounded-[36px] border-white/85 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,248,0.82))] p-0 shadow-[0_30px_82px_rgba(15,23,42,0.06)]">
+            <div className="relative overflow-hidden px-5 py-6 sm:px-6">
+              <div className="absolute inset-x-0 top-0 h-28 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.12),transparent_34%),radial-gradient(circle_at_top_right,rgba(14,165,233,0.12),transparent_32%)]" />
+              <div className="relative flex flex-col gap-6">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                  <div className="max-w-[840px]">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Подрядчик / ТОО
+                    </div>
+                    <div className="mt-2 text-[30px] font-bold tracking-[-0.055em] text-slate-950 sm:text-[34px]">
+                      Рабочие задания от акимата
+                    </div>
+                    <div className="mt-3 text-sm leading-7 text-slate-600">
+                      Здесь подрядчик видит не поток жалоб, а оформленные execution tickets: SLA, контур ответственности, proof-of-execution и shared-case апдейты в одном рабочем слое.
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button onClick={() => onStatusChange?.()} className={actionButtonClasses('secondary')}>
+                      <RefreshCw size={15} />
+                      Обновить
+                    </button>
+                    <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-[12px] font-semibold text-emerald-700">
+                      {stats.shared} shared-case c акиматом
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
+                  <HeroMetric label="Всего заданий" value={stats.total} hint="в contractor queue" />
+                  <HeroMetric label="В работе" value={stats.active} hint="назначено и принято" />
+                  <HeroMetric label="SLA под риском" value={stats.slaRisk} hint="нужен апдейт или выезд" />
+                  <HeroMetric label="На verify" value={stats.verifyQueue} hint="proof ждёт подтверждения" />
+                </div>
               </div>
             </div>
           </GlassPanel>
 
+          <GlassPanel className="rounded-[32px] border-white/85 bg-white/72 p-4 shadow-[0_22px_60px_rgba(15,23,42,0.05)]">
+            <div className="grid gap-4">
+              <div>
+                <SectionLabel>Очереди</SectionLabel>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {Object.entries(QUEUE_META).map(([key, meta]) => (
+                    <FilterChip
+                      key={key}
+                      active={queueFilter === key}
+                      variant={meta.variant}
+                      icon={meta.icon}
+                      count={queueCounts[key] ?? 0}
+                      onClick={() => setQueueFilter(key)}
+                    >
+                      {meta.label}
+                    </FilterChip>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div>
+                  <SectionLabel>Контур ответственности</SectionLabel>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {MODE_FILTERS.map(filter => (
+                      <FilterChip
+                        key={filter.id}
+                        active={modeFilter === filter.id}
+                        variant={filter.variant}
+                        onClick={() => setModeFilter(filter.id)}
+                      >
+                        {filter.label}
+                      </FilterChip>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <SectionLabel>Приоритет</SectionLabel>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {SEVERITY_FILTERS.map(filter => (
+                      <FilterChip
+                        key={filter.id}
+                        active={severityFilter === filter.id}
+                        variant={filter.variant}
+                        onClick={() => setSeverityFilter(filter.id)}
+                      >
+                        {filter.label}
+                      </FilterChip>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </GlassPanel>
+
+          {error ? (
+            <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              <CircleAlert size={16} />
+              <span>{error}</span>
+            </div>
+          ) : null}
+
           {filteredReports.length === 0 ? (
-            <GlassPanel style={{ padding: '48px 24px', textAlign: 'center' }}>
-              <div style={{ width: 64, height: 64, borderRadius: 18, background: 'rgba(15,118,110,0.08)', color: '#0f766e', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <GlassPanel className="items-center gap-3 rounded-[32px] border-white/85 bg-white/72 px-6 py-12 text-center shadow-[0_22px_60px_rgba(15,23,42,0.05)]">
+              <div className="inline-flex h-16 w-16 items-center justify-center rounded-[22px] bg-emerald-50 text-emerald-700">
                 <Wrench size={28} />
               </div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#0f172a' }}>Заявок пока нет</div>
-              <div style={{ marginTop: 6, fontSize: 14, color: '#64748b' }}>
-                Здесь появятся заявки вашей компании и обращения, которые акимат передал в совместную работу.
+              <div className="text-[22px] font-bold tracking-[-0.03em] text-slate-950">
+                В этой очереди пока пусто
+              </div>
+              <div className="max-w-[560px] text-sm leading-7 text-slate-600">
+                Новые назначения, гарантийные кейсы и shared-case появятся здесь, когда акимат направит их в execution layer подрядчика или ТОО оставит следующий апдейт по работам.
               </div>
             </GlassPanel>
           ) : (
-            <div style={{ display: 'grid', gap: 16 }}>
-              {filteredReports.map((report, index) => (
-                <ReportCard
-                  key={report.id}
-                  delay={index * 0.03}
-                  report={report}
-                  draftPreview={completionPreviews[report.id]}
-                  busy={busyId === report.id}
-                  onPickFile={event => handleCompletionFileChange(report.id, event)}
-                  onMoveToWork={() => moveToWork(report.id)}
-                  onResolve={() => resolveReport(report)}
-                  onEnableShared={() => enableSharedWork(report.id)}
-                  commentDraft={commentDrafts[report.id] ?? ''}
-                  onCommentChange={value => setCommentDrafts(prev => ({ ...prev, [report.id]: value }))}
-                  onSaveComment={() => savePartnerComment(report)}
-                  registerInput={node => { fileInputs.current[report.id] = node; }}
+            <div className="grid gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
+              <GlassPanel className="rounded-[32px] border-white/85 bg-white/72 p-4 shadow-[0_22px_60px_rgba(15,23,42,0.05)]">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div>
+                    <SectionLabel>Очередь заданий</SectionLabel>
+                    <div className="mt-1 text-lg font-bold tracking-[-0.03em] text-slate-950">
+                      {filteredReports.length} в текущей выборке
+                    </div>
+                  </div>
+                  <ToneBadge variant="dark">{queueCounts[queueFilter] ?? filteredReports.length}</ToneBadge>
+                </div>
+
+                <div className="mt-4 grid gap-3 2xl:max-h-[calc(100vh-21rem)] 2xl:overflow-y-auto 2xl:pr-1">
+                  {filteredReports.map(report => (
+                    <TicketListItem
+                      key={report.id}
+                      report={report}
+                      active={selectedReport?.id === report.id}
+                      onClick={() => setSelectedReportId(report.id)}
+                    />
+                  ))}
+                </div>
+              </GlassPanel>
+
+              {selectedReport ? (
+                <WorkOrderDetailPanel
+                  report={selectedReport}
+                  user={user}
+                  busy={busyId === selectedReport.id}
+                  draftPreview={completionPreviews[selectedReport.id]}
+                  commentDraft={commentDrafts[selectedReport.id] ?? ''}
+                  onPickFile={event => handleCompletionFileChange(selectedReport.id, event)}
+                  onAccept={() => acceptWork(selectedReport)}
+                  onBlock={() => markBlocked(selectedReport)}
+                  onDispute={() => markBlocked(selectedReport, true)}
+                  onResolve={() => resolveReport(selectedReport)}
+                  onEnableShared={() => enableSharedWork(selectedReport)}
+                  onCommentChange={value => setCommentDrafts(prev => ({ ...prev, [selectedReport.id]: value }))}
+                  onSaveComment={() => savePartnerComment(selectedReport)}
+                  registerInput={node => { fileInputs.current[selectedReport.id] = node; }}
                 />
-              ))}
+              ) : null}
             </div>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );
@@ -377,182 +700,496 @@ export default function BusinessDashboard({ reports = [], user, onTabChange, onL
 
 function AccessDenied({ onBack }) {
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, background: '#f4f7f6', fontFamily: "'DM Sans', system-ui, sans-serif" }}>
-      <div style={{ width: 68, height: 68, borderRadius: 20, background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
-        <CircleAlert size={30} />
+    <div className="flex min-h-[70vh] flex-col items-center justify-center gap-4 px-5 text-center">
+      <div className="inline-flex h-16 w-16 items-center justify-center rounded-[20px] bg-rose-50 text-rose-600">
+        <CircleAlert size={28} />
       </div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: '#0f172a' }}>Доступ только для частного сектора</div>
-      <div style={{ maxWidth: 360, textAlign: 'center', fontSize: 14, color: '#64748b', lineHeight: 1.6 }}>
-        Войдите под business-аккаунтом управляющей компании, чтобы просматривать и закрывать только свои заявки.
+      <div className="text-[24px] font-bold tracking-[-0.03em] text-slate-950">
+        Доступ только для подрядчика
       </div>
-      <button onClick={onBack} style={{ padding: '10px 22px', borderRadius: 10, background: '#0f766e', color: '#fff', fontSize: 14, fontWeight: 600 }}>
+      <div className="max-w-[440px] text-sm leading-6 text-slate-600">
+        Войдите под contractor-аккаунтом ТОО, чтобы видеть назначенные work orders, загружать proof-of-execution и синхронизировать shared-case с акиматом.
+      </div>
+      <button onClick={onBack} className={actionButtonClasses('primary')}>
         Вернуться на карту
       </button>
     </div>
   );
 }
 
-function MetricCard({ title, value, tone }) {
-  const palette = {
-    neutral: { color: '#0f172a', bg: '#ffffff', border: '#e2e8e0' },
-    new: { color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' },
-    work: { color: '#d97706', bg: '#fff7ed', border: '#fed7aa' },
-    done: { color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
-  }[tone];
+function TicketListItem({ report, active, onClick }) {
+  const severity = getSeverityMeta(report.severity);
+  const workOrder = getWorkOrderStatusMeta(report);
+  const workOrderKey = inferWorkOrderStatus(report);
+  const responsibilityMode = getResponsibilityModeMeta(report);
+  const responsibilityModeKey = inferResponsibilityMode(report);
+  const deadline = getDeadlineState(report);
 
   return (
-    <GlassCard style={{ padding: 16, background: palette.bg, border: `1px solid ${palette.border}` }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 8 }}>{title}</div>
-      <div style={{ fontSize: 28, fontWeight: 800, color: palette.color }}>{value}</div>
-    </GlassCard>
+    <motion.button
+      layout
+      onClick={onClick}
+      whileHover={{ y: -2 }}
+      whileTap={{ scale: 0.995 }}
+      transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+      className={cx(
+        'rounded-[26px] border p-4 text-left transition shadow-[0_14px_32px_rgba(15,23,42,0.04)]',
+        active
+          ? 'border-emerald-300 bg-emerald-50/80 text-slate-950 ring-1 ring-emerald-200/70'
+          : 'border-white/85 bg-white/76 text-slate-950 hover:border-slate-200 hover:bg-white'
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className={cx('text-[10px] font-semibold uppercase tracking-[0.16em]', active ? 'text-emerald-700' : 'text-slate-500')}>
+            {getCategoryLabel(report)}
+          </div>
+          <div className={cx('mt-2 text-[15px] font-bold leading-6', active ? 'text-slate-950' : 'text-slate-950')}>
+            {getReportTitle(report)}
+          </div>
+          <div className={cx('mt-1 text-[12px] leading-5', active ? 'text-slate-600' : 'text-slate-500')}>
+            {report.address || 'Алматы'}
+          </div>
+        </div>
+
+        <ArrowRight size={16} className={active ? 'text-emerald-600' : 'text-slate-300'} />
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <CompactBadge active={active} variant={severity.variant}>{severity.label}</CompactBadge>
+        <CompactBadge active={active} variant={getWorkOrderVariant(workOrderKey)}>{workOrder.label}</CompactBadge>
+        <CompactBadge active={active} variant={getResponsibilityVariant(responsibilityModeKey)}>{responsibilityMode.label}</CompactBadge>
+      </div>
+
+      <div className={cx('mt-3 rounded-[18px] border px-3 py-2.5 text-[12px] leading-5', active ? 'border-emerald-200 bg-white/80 text-slate-700' : 'border-slate-100 bg-slate-50/80 text-slate-600')}>
+        {deadline.label}
+      </div>
+    </motion.button>
   );
 }
 
-function ReportCard({
+const sectionMotion = {
+  initial: { opacity: 0, y: 10 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.24, ease: [0.16, 1, 0.3, 1] },
+};
+
+function WorkOrderDetailPanel({
   report,
-  delay,
-  draftPreview,
+  user,
   busy,
+  draftPreview,
+  commentDraft,
   onPickFile,
-  onMoveToWork,
+  onAccept,
+  onBlock,
+  onDispute,
   onResolve,
   onEnableShared,
-  commentDraft,
   onCommentChange,
   onSaveComment,
   registerInput,
 }) {
-  const status = STATUS_META[report.status] ?? STATUS_META.new;
-  const severity = SEVERITY_META[report.severity] ?? { label: report.severity ?? '—', color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' };
-  const originalImage = report.image_url ?? report.image ?? null;
+  const severity = getSeverityMeta(report.severity);
+  const workOrder = getWorkOrderStatusMeta(report);
+  const workOrderKey = inferWorkOrderStatus(report);
+  const responsibilityMode = getResponsibilityModeMeta(report);
+  const responsibilityModeKey = inferResponsibilityMode(report);
+  const proofStatus = getProofStatusMeta(report);
+  const proofStatusKey = inferProofStatus(report);
+  const deadline = getDeadlineState(report);
+  const originalImage = getPrimaryImage(report);
   const completionImage = draftPreview ?? report.completion_image_url ?? null;
   const canResolve = Boolean(completionImage);
+  const assignedOrg = getAssignedOrgName(report) || getContractorOrgName(report) || user.name;
   const responsibility = getResponsibleRole(report);
-  const responsibilityStyle = RESPONSIBILITY_STYLE[responsibility];
-  const reporterRole = getReporterRole(report);
-  const assignedOrg = getAssignedOrgName(report);
+  const showPartnerBox = isSharedCase(report) || ['blocked', 'disputed'].includes(workOrderKey);
 
   return (
-    <GlassPanel delay={delay} style={{ padding: 18 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 12 }}>
-        <div style={{ flex: 1, minWidth: 220 }}>
-        <div style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>
-            {report.detected_issue_title ?? CATEGORY_LABEL[report.type] ?? report.type ?? 'Заявка'}
+    <motion.div
+      key={report.id}
+      initial={{ opacity: 0, y: 14, scale: 0.995 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+    >
+    <GlassPanel className="rounded-[32px] border-white/85 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,248,0.84))] p-0 shadow-[0_24px_64px_rgba(15,23,42,0.05)]">
+      <div className="border-b border-slate-100 px-5 py-5 sm:px-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Execution ticket · {getCategoryLabel(report)}
+            </div>
+            <div className="mt-2 text-[24px] font-bold tracking-[-0.04em] text-slate-950">
+              {getReportTitle(report)}
+            </div>
+            <div className="mt-2 text-sm leading-7 text-slate-600">
+              {report.address || 'Алматы'} · обновлено {formatDateTime(report.updated_at || report.created_at)}
+            </div>
           </div>
-          <div style={{ fontSize: 13, color: '#64748b', lineHeight: 1.5 }}>
-            {report.address || 'Адрес не указан'} · {new Date(report.created_at ?? Date.now()).toLocaleString('ru-RU')}
+
+          <div className="flex flex-wrap gap-2">
+            <ToneBadge variant={severity.variant}>{severity.label}</ToneBadge>
+            <ToneBadge variant={getWorkOrderVariant(workOrderKey)}>{workOrder.label}</ToneBadge>
+            <ToneBadge variant={getResponsibilityVariant(responsibilityModeKey)}>{responsibilityMode.label}</ToneBadge>
           </div>
         </div>
+      </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Badge tone={severity}>{severity.label}</Badge>
-          <Badge tone={status}>{status.label}</Badge>
-          <Badge tone={responsibilityStyle}>{RESPONSIBILITY_LABEL[responsibility]}</Badge>
+      <div className="grid gap-4 p-5 sm:p-6">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+          <SectionCard title="Почему назначено">
+            <div className="text-[15px] font-semibold leading-7 text-slate-900">
+              {getLiabilityNarrative(report)}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <ToneBadge variant={getDeadlineVariant(deadline.tone)}>
+                <Clock3 size={13} className="mr-1.5" />
+                {deadline.label}
+              </ToneBadge>
+              <ToneBadge variant={getProofVariant(proofStatusKey)}>
+                {proofStatus.label}
+              </ToneBadge>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Контур актива">
+            <div className="flex flex-wrap gap-2">
+              <ToneBadge variant={getResponsibilityVariant(responsibilityModeKey)}>{responsibilityMode.label}</ToneBadge>
+              <ToneBadge variant={getWorkOrderVariant(workOrderKey)}>{workOrder.label}</ToneBadge>
+              <ToneBadge variant={getProofVariant(proofStatusKey)}>{proofStatus.label}</ToneBadge>
+            </div>
+            <div className="mt-3 text-sm leading-6 text-slate-600">
+              {responsibilityMode.caption}
+            </div>
+            <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
+              <SideInfo label="Назначено ТОО" value={assignedOrg} />
+              <SideInfo label="Контур" value={RESPONSIBILITY_LABEL[responsibility] ?? 'Акимат'} />
+              <SideInfo label="Актив" value={report.asset_type || 'Городская инфраструктура'} />
+              <SideInfo label="Гарантия" value={report.warranty_until ? formatDateOnly(report.warranty_until) : 'По сервисному контракту'} />
+            </div>
+          </SectionCard>
         </div>
-      </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-        <MetaPill label={`Создал: ${REPORTER_ROLE_LABEL[reporterRole]}`} value={getReporterName(report)} />
-        {assignedOrg && <MetaPill label="Назначено" value={assignedOrg} />}
-      </div>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <SectionCard title="Следующий шаг">
+            <div className="text-sm font-semibold leading-7 text-slate-900">
+              {getNextRequiredAction(report)}
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <MetaCell label="SLA дедлайн" value={deadline.dueAt ? formatDateTime(deadline.dueAt) : 'Уточняется'} />
+              <MetaCell label="Зона" value={report.service_zone || report.district || 'Алматы'} />
+              <MetaCell label="Владелец" value={report.asset_owner || 'Город Алматы'} />
+            </div>
+          </SectionCard>
 
-      <AITriagePanel data={report} compact title="AI reason for routing" />
-
-      {isSharedCase(report) && (
-        <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 12, background: '#fef3c7', border: '1px solid #fde68a', color: '#92400e', fontSize: 13, fontWeight: 600 }}>
-          Совместный кейс: заявка одновременно находится в поле зрения акимата и частного сектора.
+          <SectionCard title="Статус исполнения">
+            <div className="grid gap-2.5">
+              <SideInfo label="Proof status" value={proofStatus.label} badgeVariant={getProofVariant(proofStatusKey)} />
+              <SideInfo label="Создано" value={formatDateTime(report.created_at)} />
+              <SideInfo label="Обновлено" value={formatDateTime(report.updated_at || report.created_at)} />
+            </div>
+          </SectionCard>
         </div>
-      )}
 
-      <CollaborationTimeline report={report} />
+        {showPartnerBox ? (
+          <InfoBanner
+            variant={responsibility === 'shared' ? 'high' : 'violet'}
+            title={responsibility === 'shared' ? 'Shared-case активен' : 'Кейс в блокировке'}
+            text={
+              responsibility === 'shared'
+                ? 'Подрядчик и акимат работают в одном контуре. Оставляйте рабочие апдейты, чтобы не потерять SLA и договорённости по выезду.'
+                : 'Оставьте ясный апдейт для акимата: что уже сделано, что блокирует бригаду и какое решение требуется.'
+            }
+          />
+        ) : null}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 14 }}>
-        <ImageCard title="Исходное фото" image={originalImage} emptyLabel="Фото обращения отсутствует" />
-        <ImageCard title="Фото результата" image={completionImage} emptyLabel="Загрузите фото после устранения" />
-      </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <SectionCard title="Фото до" padded={false}>
+            <ImageCard title={null} image={originalImage} emptyLabel="Фото обращения отсутствует" />
+          </SectionCard>
+          <SectionCard title="Фото после / proof" padded={false}>
+            <ImageCard title={null} image={completionImage} emptyLabel="Загрузите итоговое фото после работ" />
+          </SectionCard>
+        </div>
 
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        {report.status === 'new' && (
-          <button onClick={onMoveToWork} disabled={busy} style={{ background: '#0f766e', color: '#fff', padding: '10px 16px', borderRadius: 10, fontWeight: 600 }}>
-            {busy ? 'Обновляем...' : 'В работу'}
-          </button>
-        )}
+        {['resolved', 'verified'].includes(report.status) && originalImage && report.completion_image_url ? (
+          <SectionCard title="AI Verify">
+            <VerifyBadge
+              beforeUrl={originalImage}
+              afterUrl={report.completion_image_url}
+              type={report.type}
+              description={report.detected_issue_title || report.title}
+            />
+          </SectionCard>
+        ) : null}
 
-        {report.status === 'in_progress' && (
-          <>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 10, background: '#f8faf9', border: '1px solid #d5dfdb', color: '#0f766e', fontSize: 13, fontWeight: 600 }}>
-              <Camera size={15} />
-              {completionImage ? 'Заменить фото результата' : 'Загрузить фото результата'}
-              <input
-                ref={registerInput}
-                type="file"
-                accept="image/*"
-                onChange={onPickFile}
-                style={{ display: 'none' }}
-              />
-            </label>
+        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_340px]">
+          <SectionCard title="AI routing dossier" padded={false}>
+            <AITriagePanel data={report} compact={false} title="AI routing dossier" showHeader={false} />
+          </SectionCard>
 
-            <button
-              onClick={onResolve}
-              disabled={busy || !canResolve}
-              style={{ background: canResolve ? '#16a34a' : '#94a3b8', color: '#fff', padding: '10px 16px', borderRadius: 10, fontWeight: 600 }}
-            >
-              {busy ? 'Сохраняем...' : 'Завершить'}
-            </button>
+          <SectionCard title="Ход исполнения">
+            <CollaborationTimeline report={report} title="Текущий статус" />
+          </SectionCard>
+        </div>
 
-            {responsibility === 'business' && (
-              <button
-                onClick={onEnableShared}
-                disabled={busy}
-                style={{ background: '#fef3c7', color: '#a16207', padding: '10px 16px', borderRadius: 10, fontWeight: 700, border: '1px solid #fde68a' }}
-              >
-                Подключить акимат
+        {showPartnerBox ? (
+          <SectionCard title="Координация с акиматом" padded={false}>
+            <PartnerCommentBox
+              report={report}
+              draft={commentDraft}
+              onDraftChange={onCommentChange}
+              onSave={onSaveComment}
+              busy={busy}
+              placeholder="Оставьте апдейт для акимата: что уже сделали, что блокирует бригаду, нужен ли общий выезд или уточнение контура ответственности…"
+            />
+          </SectionCard>
+        ) : null}
+
+        <SectionCard title="Действия бригады">
+          <div className="flex flex-wrap gap-2.5">
+            {workOrderKey === 'assigned' ? (
+              <button onClick={onAccept} disabled={busy} className={actionButtonClasses('primary')}>
+                {busy ? 'Назначаем…' : 'Принять задание'}
+                <ArrowRight size={14} />
               </button>
-            )}
-          </>
-        )}
+            ) : null}
 
-        {report.status === 'resolved' && (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 10, background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#16a34a', fontSize: 13, fontWeight: 700 }}>
-            <CheckCircle2 size={15} />
-            Исполнено
+            {['accepted', 'blocked', 'disputed'].includes(workOrderKey) ? (
+              <>
+                <label className={cx(actionButtonClasses('secondary'), 'cursor-pointer')}>
+                  <Camera size={15} />
+                  {completionImage ? 'Обновить proof' : 'Загрузить proof'}
+                  <input
+                    ref={registerInput}
+                    type="file"
+                    accept="image/*"
+                    onChange={onPickFile}
+                    className="hidden"
+                  />
+                </label>
+
+                <button onClick={onResolve} disabled={busy || !canResolve} className={actionButtonClasses('primary')}>
+                  {busy ? 'Передаём…' : 'Передать на verify'}
+                  <ArrowRight size={14} />
+                </button>
+
+                <button onClick={onBlock} disabled={busy} className={actionButtonClasses('secondary')}>
+                  <Handshake size={15} />
+                  Ждёт акимат
+                </button>
+
+                <button onClick={onDispute} disabled={busy} className={actionButtonClasses('secondary')}>
+                  <ShieldAlert size={15} />
+                  Оспорить зону
+                </button>
+
+                {responsibility === 'business' ? (
+                  <button onClick={onEnableShared} disabled={busy} className={actionButtonClasses('warning')}>
+                    Нужен общий выезд
+                  </button>
+                ) : null}
+              </>
+            ) : null}
+
+            {workOrderKey === 'completed' ? (
+              <div className={cx('inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-[13px] font-semibold', badgeClasses('soft-success'))}>
+                <ShieldCheck size={16} />
+                Proof загружен, ждём verify
+              </div>
+            ) : null}
+
+            {workOrderKey === 'verified' ? (
+              <div className={cx('inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-[13px] font-semibold', badgeClasses('success'))}>
+                <CheckCircle2 size={16} />
+                Задание закрыто и подтверждено
+              </div>
+            ) : null}
           </div>
-        )}
+        </SectionCard>
       </div>
-
-      {isSharedCase(report) && (
-        <PartnerCommentBox
-          report={report}
-          draft={commentDraft}
-          onDraftChange={onCommentChange}
-          onSave={onSaveComment}
-          busy={busy}
-          placeholder="Напишите комментарий для акимата: что уже сделано, что требуется, какие есть ограничения..."
-        />
-      )}
     </GlassPanel>
+    </motion.div>
   );
 }
 
-function MetaPill({ label, value }) {
+function SectionLabel({ children }) {
   return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 999, background: '#f8faf9', border: '1px solid #e2e8e0', color: '#475569', fontSize: 12 }}>
-      <span style={{ color: '#94a3b8', fontWeight: 700 }}>{label}</span>
-      <span style={{ color: '#0f172a', fontWeight: 600 }}>{value}</span>
+    <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+      {children}
+    </div>
+  );
+}
+
+function HeroMetric({ label, value, hint }) {
+  return (
+    <div className="rounded-[26px] border border-white/85 bg-white/72 px-4 py-4 shadow-[0_14px_32px_rgba(15,23,42,0.04)]">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+        {label}
+      </div>
+      <div className="mt-2 text-[24px] font-bold leading-none text-slate-950">
+        {value}
+      </div>
+      <div className="mt-2 text-[12px] text-slate-500">
+        {hint}
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({ title, value, hint, tone }) {
+  return (
+    <GlassCard className={cx('rounded-[24px] border p-4 shadow-[0_16px_34px_rgba(15,23,42,0.04)]', metricClasses(tone))}>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+        {title}
+      </div>
+      <div className="mt-2 text-[28px] font-bold leading-none">
+        {value}
+      </div>
+      <div className="mt-2 text-[12px] text-slate-500">
+        {hint}
+      </div>
+    </GlassCard>
+  );
+}
+
+function RailNote({ label, text, variant }) {
+  return (
+    <div className="rounded-[24px] border border-white/85 bg-white/70 p-4 shadow-[0_14px_28px_rgba(15,23,42,0.04)]">
+      <ToneBadge variant={variant}>{label}</ToneBadge>
+      <div className="mt-3 text-[13px] leading-6 text-slate-600">{text}</div>
+    </div>
+  );
+}
+
+function FocusItem({ label, value, hint, variant }) {
+  return (
+    <div className="rounded-[24px] border border-white/85 bg-white/70 px-4 py-3 shadow-[0_14px_28px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[12px] font-semibold text-slate-700">{label}</div>
+        <ToneBadge variant={variant}>{value}</ToneBadge>
+      </div>
+      <div className="mt-2 text-[12px] leading-5 text-slate-500">{hint}</div>
+    </div>
+  );
+}
+
+function FilterChip({ active, variant = 'neutral', children, count, icon: Icon, onClick }) {
+  return (
+    <motion.button
+      whileHover={{ y: -1.5 }}
+      whileTap={{ scale: 0.99 }}
+      transition={{ type: 'spring', stiffness: 360, damping: 26 }}
+      onClick={onClick}
+      className={cx(
+        'inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-[12px] font-semibold transition',
+        active
+          ? badgeClasses(variant)
+          : 'border-white/90 bg-white/78 text-slate-700 hover:bg-white'
+      )}
+    >
+      {Icon ? <Icon size={13} /> : null}
+      <span>{children}</span>
+      {typeof count === 'number' ? (
+        <span className={cx('text-[11px]', active ? 'opacity-70' : 'text-slate-400')}>
+          {count}
+        </span>
+      ) : null}
+    </motion.button>
+  );
+}
+
+function InfoBanner({ title, text, variant }) {
+  return (
+    <div className={cx('rounded-[24px] border px-4 py-3.5', badgeClasses(variant))}>
+      <div className="text-[12px] font-semibold uppercase tracking-[0.14em] opacity-80">
+        {title}
+      </div>
+      <div className="mt-1.5 text-[13px] leading-6">
+        {text}
+      </div>
+    </div>
+  );
+}
+
+function SectionCard({ title, children, padded = true }) {
+  return (
+    <motion.div
+      variants={sectionMotion}
+      initial="initial"
+      animate="animate"
+      className={cx(
+        'rounded-[28px] border border-white/85 bg-white/76 shadow-[0_16px_34px_rgba(15,23,42,0.035)]',
+        padded ? 'p-4 sm:p-5' : 'overflow-hidden'
+      )}
+    >
+      {title ? (
+        <div className={padded ? '' : 'px-4 pt-4 sm:px-5'}>
+          <SectionLabel>{title}</SectionLabel>
+        </div>
+      ) : null}
+      <div className={cx(!padded && title ? 'px-4 pb-4 pt-3 sm:px-5' : null)}>
+        {children}
+      </div>
+    </motion.div>
+  );
+}
+
+function CompactBadge({ active, variant, children }) {
+  return (
+    <span className={cx(
+      'inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold',
+      active
+        ? 'border-white/90 bg-white text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.06)]'
+        : badgeClasses(variant)
+    )}>
+      {children}
+    </span>
+  );
+}
+
+function MetaCell({ label, value }) {
+  return (
+    <div className="rounded-[22px] border border-white/85 bg-white/74 px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.03)]">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      <div className="mt-1.5 text-[14px] font-semibold leading-6 text-slate-900">{value}</div>
+    </div>
+  );
+}
+
+function SideInfo({ label, value, badgeVariant }) {
+  return (
+    <div className="rounded-[22px] border border-white/85 bg-white/74 px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.03)]">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      {badgeVariant ? (
+        <div className="mt-2">
+          <ToneBadge variant={badgeVariant}>{value}</ToneBadge>
+        </div>
+      ) : (
+        <div className="mt-1.5 text-[14px] font-semibold leading-6 text-slate-900">{value}</div>
+      )}
     </div>
   );
 }
 
 function ImageCard({ title, image, emptyLabel }) {
   return (
-    <div style={{ borderRadius: 14, overflow: 'hidden', border: '1px solid #e2e8e0', background: '#fff' }}>
-      <div style={{ padding: '10px 12px', borderBottom: '1px solid #eef2f1', fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.7px' }}>
-        {title}
-      </div>
+    <div className="group overflow-hidden rounded-[26px] border border-white/85 bg-white/78 shadow-[0_16px_34px_rgba(15,23,42,0.04)]">
+      {title ? (
+        <div className="border-b border-slate-100 px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+          {title}
+        </div>
+      ) : null}
       {image ? (
-        <img src={image} alt={title} style={{ width: '100%', height: 180, objectFit: 'cover', display: 'block' }} />
+        <motion.img
+          src={image}
+          alt={title || 'report image'}
+          className="block aspect-[16/10] w-full object-cover"
+          whileHover={{ scale: 1.018 }}
+          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        />
       ) : (
-        <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, textAlign: 'center', color: '#94a3b8', fontSize: 13, background: '#f8faf9' }}>
+        <div className="flex aspect-[16/10] items-center justify-center px-6 text-center text-[13px] leading-6 text-slate-400">
           {emptyLabel}
         </div>
       )}
@@ -560,9 +1197,9 @@ function ImageCard({ title, image, emptyLabel }) {
   );
 }
 
-function Badge({ tone, children }) {
+function ToneBadge({ variant, children }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '5px 10px', borderRadius: 999, background: tone.bg, border: `1px solid ${tone.border}`, color: tone.color, fontSize: 12, fontWeight: 700 }}>
+    <span className={cx('inline-flex items-center rounded-full border px-3 py-1.5 text-[12px] font-semibold', badgeClasses(variant))}>
       {children}
     </span>
   );

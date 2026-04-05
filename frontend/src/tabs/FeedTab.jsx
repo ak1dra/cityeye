@@ -1,662 +1,353 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { getAIDossier, normalizeConfidenceLabel } from '../lib/aiTriage';
+import {
+  getAssignedOrgName,
+  getReporterName,
+  getReporterRole,
+  getResponsibleRole,
+  REPORT_STATUS_LABEL,
+  REPORTER_ROLE_LABEL,
+  RESPONSIBILITY_LABEL,
+  RESPONSIBILITY_STYLE,
+  isSharedCase,
+} from '../lib/reportCollaboration';
+import { readFeedComments, readFeedLikes, writeFeedComments, writeFeedLikes } from '../lib/feedSocial';
 
-/* ══════════════════════════════════════════
-   CONSTANTS
-══════════════════════════════════════════ */
-const SEV_CONFIG = {
-  critical: { label: 'Критично',  color: '#dc2626', avatarBg: 'rgba(220,38,38,0.1)',   avatarColor: '#dc2626' },
-  high:     { label: 'Высокий',   color: '#d97706', avatarBg: 'rgba(217,119,6,0.1)',   avatarColor: '#d97706' },
-  medium:   { label: 'Средний',   color: '#2563eb', avatarBg: 'rgba(37,99,235,0.1)',   avatarColor: '#2563eb' },
-  low:      { label: 'Низкий',    color: '#7c3aed', avatarBg: 'rgba(124,58,237,0.1)',  avatarColor: '#7c3aed' },
-  resolved: { label: 'Решено',    color: '#16a34a', avatarBg: 'rgba(22,163,74,0.1)',   avatarColor: '#16a34a' },
-};
-
-const ST_CONFIG = {
-  new:         { label: 'Новый',    color: '#2563eb' },
-  in_progress: { label: 'В работе', color: '#d97706' },
-  resolved:    { label: 'Решено',   color: '#16a34a' },
-  rejected:    { label: 'Отклонён', color: '#94a3b8' },
-};
-
-const CAT_LABEL = {
-  road: 'Дороги', lighting: 'Освещение', greenery: 'Озеленение',
-  utilities: 'Коммуникации', waste: 'Мусор', other: 'Другое',
-};
-
-const CAT_HANDLE = {
-  road: '@dorogi', lighting: '@osveschenie', waste: '@ekologiya',
-  greenery: '@zelenye', utilities: '@kommunalka', other: '@gorod',
-};
-
-const CAT_INITIALS = {
-  road: 'ДР', lighting: 'ОС', waste: 'МС',
-  greenery: 'ЗЛ', utilities: 'КМ', other: 'ГР',
-};
-
-const HOTSPOTS = [
-  { district: 'Медеуский',     count: 12, color: '#dc2626' },
-  { district: 'Бостандыкский', count: 9,  color: '#d97706' },
-  { district: 'Алмалинский',   count: 7,  color: '#d97706' },
-  { district: 'Жетысуский',    count: 5,  color: '#2563eb' },
-  { district: 'Ауэзовский',    count: 4,  color: '#2563eb' },
+const VIEW_TABS = [
+  { id: 'reports', label: 'Обращения' },
+  { id: 'news', label: 'Новости акимата' },
 ];
 
-const FILTERS = [
-  { id: 'all',      label: 'Все' },
-  { id: 'critical', label: 'Критично' },
-  { id: 'high',     label: 'Высокий' },
+const STATUS_FILTERS = [
+  { id: 'all', label: 'Все' },
+  { id: 'urgent', label: 'Срочные' },
+  { id: 'in_progress', label: 'В работе' },
+  { id: 'shared', label: 'Совместно' },
   { id: 'resolved', label: 'Решено' },
-  { id: 'near',     label: 'Рядом' },
-  { id: 'news',     label: 'Новости' },
 ];
+
+const CATEGORY_META = {
+  road: { label: 'Дороги', color: '#dc2626', initials: 'ДР' },
+  lighting: { label: 'Освещение', color: '#d97706', initials: 'ОС' },
+  waste: { label: 'Мусор', color: '#ea580c', initials: 'МС' },
+  greenery: { label: 'Озеленение', color: '#16a34a', initials: 'ЗЛ' },
+  utilities: { label: 'Коммуникации', color: '#2563eb', initials: 'КМ' },
+  parking: { label: 'Парковка', color: '#0f766e', initials: 'ПР' },
+  vandal: { label: 'Вандализм', color: '#8b5cf6', initials: 'ВД' },
+  other: { label: 'Город', color: '#64748b', initials: 'ГО' },
+};
+
+const SEVERITY_META = {
+  critical: { label: 'Критично', color: '#dc2626', bg: 'rgba(220,38,38,0.08)', border: 'rgba(220,38,38,0.18)' },
+  high: { label: 'Высокий', color: '#d97706', bg: 'rgba(217,119,6,0.08)', border: 'rgba(217,119,6,0.18)' },
+  medium: { label: 'Средний', color: '#2563eb', bg: 'rgba(37,99,235,0.08)', border: 'rgba(37,99,235,0.18)' },
+  low: { label: 'Низкий', color: '#7c3aed', bg: 'rgba(124,58,237,0.08)', border: 'rgba(124,58,237,0.18)' },
+  resolved: { label: 'Решено', color: '#16a34a', bg: 'rgba(22,163,74,0.08)', border: 'rgba(22,163,74,0.18)' },
+};
 
 const NEWS_POSTS = [
   {
     id: 'news-1',
-    author: 'Ruslan Berdenov',
-    position: 'Заместитель акима Алматы',
-    avatar: '/ruslan-avatar.jpg',
-    initials: 'RB',
-    isOfficial: true,
+    title: 'Убрали 47 незаконных рекламных щитов',
+    content: 'За последние две недели демонтировали 47 незаконных рекламных конструкций вблизи школ и детских площадок. Работа продолжается в Медеуском и Ауэзовском районах.',
     time: '2 часа назад',
-    title: '✅ Убрали 47 незаконных рекламных щитов букмекеров',
-    content: 'За последние 2 недели наша команда демонтировала 47 незаконных рекламных конструкций букмекерских контор вблизи школ и детских площадок. Это прямое нарушение закона РК. Работа продолжается — следующий рейд в Ауэзовском районе.',
-    stats: { likes: 234, comments: 67, shares: 89 },
-    tags: ['реклама', 'законность', 'дети'],
-    severity: 'resolved',
-    beforeAfter: true,
+    tags: ['законность', 'безопасность', 'Алматы'],
+    metric: '47 объектов демонтировано',
+    stats: { shares: 18 },
   },
   {
     id: 'news-2',
-    author: 'Ruslan Berdenov',
-    position: 'Заместитель акима Алматы',
-    avatar: '/ruslan-avatar.jpg',
-    initials: 'RB',
-    isOfficial: true,
+    title: 'Отремонтировали 12 км дорог в Бостандыкском районе',
+    content: 'Через CityEye получили повторяющиеся сигналы по дорожным дефектам на Аль-Фараби и Достык. На основе этих данных ускорили ремонт и закрыли критические участки.',
     time: '1 день назад',
-    title: '🚧 Отремонтировали 12 км дорог в Бостандыкском районе',
-    content: 'Благодаря системе CityEye выявили и устранили 89 ям на ул. Аль-Фараби и Достык. Граждане сообщали через платформу — мы реагировали в течение 24 часов. Среднее время устранения снизилось с 18 до 6 дней.',
-    stats: { likes: 456, comments: 123, shares: 201 },
-    tags: ['дороги', 'Бостандык', 'ремонт'],
-    severity: 'resolved',
-    metric: '89 ям устранено',
+    tags: ['дороги', 'ремонт', 'Бостандык'],
+    metric: '89 дефектов устранено',
+    stats: { shares: 26 },
   },
   {
     id: 'news-3',
-    author: 'Ruslan Berdenov',
-    position: 'Заместитель акима Алматы',
-    avatar: '/ruslan-avatar.jpg',
-    initials: 'RB',
-    isOfficial: true,
+    title: 'Восстановили освещение в пяти микрорайонах',
+    content: 'После серии обращений через платформу заменили неработающие светильники и восстановили линии питания в зонах возле школ и остановок.',
     time: '3 дня назад',
-    title: '💡 Восстановили освещение в 5 микрорайонах',
-    content: 'Через CityEye граждане сообщили о 34 неработающих фонарях. Все устранены за 3 дня. Особое внимание уделили улицам вблизи школ — безопасность детей в приоритете. АО АлматыЭнергосбыт отработал оперативно.',
-    stats: { likes: 312, comments: 45, shares: 78 },
-    tags: ['освещение', 'безопасность', 'дети'],
-    severity: 'resolved',
-    metric: '34 фонаря',
-  },
-  {
-    id: 'news-4',
-    author: 'Ruslan Berdenov',
-    position: 'Заместитель акима Алматы',
-    avatar: '/ruslan-avatar.jpg',
-    initials: 'RB',
-    isOfficial: true,
-    time: '5 дней назад',
-    title: '🏗️ Снесли 23 незаконные постройки у дорог',
-    content: 'Совместно с прокуратурой демонтировали 23 самовольные постройки которые создавали опасность на дорогах и закрывали видимость знаков. Все объекты внесены в реестр нарушений через CityEye.',
-    stats: { likes: 189, comments: 34, shares: 56 },
-    tags: ['самострой', 'безопасность', 'дороги'],
-    severity: 'resolved',
-    metric: '23 объекта',
-  },
-  {
-    id: 'news-5',
-    author: 'Ruslan Berdenov',
-    position: 'Заместитель акима Алматы',
-    avatar: '/ruslan-avatar.jpg',
-    initials: 'RB',
-    isOfficial: true,
-    time: '1 неделю назад',
-    title: '🎯 CityEye — наш главный инструмент работы с гражданами',
-    content: 'За первый месяц работы с платформой CityEye: получено 1,204 репорта от граждан, решено 843 проблемы, среднее время реакции снизилось с 21 до 6 дней. Каждый гражданин и предприниматель может сообщить о проблеме — мы реагируем. Алматы становится умным городом.',
-    stats: { likes: 891, comments: 234, shares: 445 },
-    tags: ['CityEye', 'smartcity', 'Алматы'],
-    severity: 'resolved',
-    metric: '843 решено',
+    tags: ['освещение', 'безопасность'],
+    metric: '34 фонаря восстановлено',
+    stats: { shares: 12 },
   },
 ];
 
-const NAV = [
-  { id: 'feed',   label: 'Лента',   icon: 'feed' },
-  { id: 'map',    label: 'Карта',   icon: 'map' },
-  { id: 'report', label: 'Репорт',  icon: 'camera' },
-  { id: 'gov',    label: 'Дашборд', icon: 'building' },
-  { id: 'business', label: 'Бизнес', icon: 'building' },
-];
-
-const MOCK = [
+const MOCK_REPORTS = [
   {
-    id: 'mk1', type: 'road', severity: 'critical', status: 'new',
-    label: 'Незаконная парковка',
+    id: 'mk1',
+    type: 'road',
+    category: 'road',
+    severity: 'critical',
+    status: 'new',
     address: 'пр. Достык 130',
-    ai_comment: 'Кафе "Урюк" выставило конусы на общественной парковке, блокируя 6 машино-мест. Нарушение ПДД РК ст. 482. Требуется немедленный вывоз конусов и штраф.',
+    ai_comment: 'Кафе заняло общественную парковку конусами и блокирует несколько машино-мест. Нужен выезд и демонтаж препятствий.',
     created_at: new Date(Date.now() - 35 * 60000).toISOString(),
   },
   {
-    id: 'mk2', type: 'road', severity: 'high', status: 'in_progress',
-    address: 'ул. Абая 45',
-    ai_comment: 'Выбоина диаметром ~40 см и глубиной 12 см прямо на пешеходном переходе. Высокий риск травм для детей и пожилых. Срочный ямочный ремонт в течение 24 часов.',
+    id: 'mk2',
+    type: 'utilities',
+    category: 'utilities',
+    severity: 'critical',
+    status: 'in_progress',
+    address: 'ул. Байзакова 31',
+    ai_comment: 'Прорыв трубы затапливает проезжую часть. Бригада уже направлена на место, но движение всё ещё затруднено.',
     created_at: new Date(Date.now() - 2 * 3600000).toISOString(),
   },
   {
-    id: 'mk3', type: 'lighting', severity: 'medium', status: 'new',
+    id: 'mk3',
+    type: 'lighting',
+    category: 'lighting',
+    severity: 'high',
+    status: 'new',
     address: 'ул. Тимирязева 28',
-    ai_comment: '3 фонарных столба у входа в школу №45 не работают уже 8 дней. Угроза для детей в тёмное время. Срок реакции: 3–5 рабочих дней.',
+    ai_comment: 'Фонари возле школы не работают больше недели. Вечером участок остаётся неосвещённым.',
     created_at: new Date(Date.now() - 8 * 3600000).toISOString(),
-  },
-  {
-    id: 'mk4', type: 'greenery', severity: 'low', status: 'resolved',
-    address: 'пр. Аль-Фараби 17',
-    ai_comment: 'Граффити 3×2 м устранено силами управляющей компании. Фасад перекрашен. Проблема закрыта.',
-    created_at: new Date(Date.now() - 86400000).toISOString(),
-  },
-  {
-    id: 'mk5', type: 'waste', severity: 'high', status: 'new',
-    address: 'ул. Розыбакиева 89',
-    ai_comment: 'Стихийный сброс стройотходов объёмом ~15 м³. Нарушение экологических норм. Необходим вывоз спецтехникой.',
-    created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
-  },
-  {
-    id: 'mk6', type: 'utilities', severity: 'critical', status: 'in_progress',
-    address: 'ул. Байзакова 31',
-    ai_comment: 'Прорыв водопроводной трубы диаметром 150 мм. Затоплено дорожное полотно ~20 м². Ремонтная бригада выехала.',
-    created_at: new Date(Date.now() - 20 * 60000).toISOString(),
   },
 ];
 
-function fakeN(id, seed) {
-  let h = seed | 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return 4 + Math.abs(h % 120);
-}
-
-function timeAgo(dateStr) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return 'только что';
-  if (m < 60) return `${m}м`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}ч`;
-  return `${Math.floor(h / 24)}д`;
-}
-
-/* ══════════════════════════════════════════
-   SVG ICONS
-══════════════════════════════════════════ */
 function Ic({ n, size = 16, color = 'currentColor', fill = 'none' }) {
-  const s = { width: size, height: size, flexShrink: 0, display: 'block' };
-  const p = { stroke: color, fill, strokeWidth: '2', strokeLinecap: 'round', strokeLinejoin: 'round' };
-  const d = {
-    feed:     <><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></>,
-    map:      <><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></>,
-    camera:   <><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></>,
-    building: <><rect x="3" y="9" width="18" height="13" rx="2"/><path d="M8 9V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v4"/></>,
-    pin:      <><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></>,
-    heart:    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>,
-    msg:      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>,
-    repeat:   <><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></>,
-    share:    <><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></>,
-    user:     <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
-    plus:     <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
-    photo:    <><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></>,
-    check:    <polyline points="20 6 9 17 4 12"/>,
+  const props = {
+    width: size,
+    height: size,
+    viewBox: '0 0 24 24',
+    fill,
+    stroke: color,
+    strokeWidth: '1.9',
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
   };
-  return <svg style={s} viewBox="0 0 24 24" {...p}>{d[n] ?? null}</svg>;
+
+  const icons = {
+    plus: (
+      <>
+        <path d="M12 5v14" />
+        <path d="M5 12h14" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="11" cy="11" r="7" />
+        <path d="M20 20l-3.5-3.5" />
+      </>
+    ),
+    heart: <path d="M20.8 4.7a5.4 5.4 0 0 0-7.6 0L12 5.9l-1.2-1.2a5.4 5.4 0 0 0-7.6 7.6l1.2 1.2L12 21l7.6-7.5 1.2-1.2a5.4 5.4 0 0 0 0-7.6z" />,
+    msg: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
+    share: (
+      <>
+        <circle cx="18" cy="5" r="3" />
+        <circle cx="6" cy="12" r="3" />
+        <circle cx="18" cy="19" r="3" />
+        <path d="M8.6 13.5l6.8 4" />
+        <path d="M15.4 6.5l-6.8 4" />
+      </>
+    ),
+    pin: (
+      <>
+        <path d="M12 21s-7-5.2-7-11a7 7 0 0 1 14 0c0 5.8-7 11-7 11z" />
+        <circle cx="12" cy="10" r="2.5" />
+      </>
+    ),
+    spark: (
+      <>
+        <path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z" />
+        <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" />
+      </>
+    ),
+    official: (
+      <>
+        <path d="M12 2l7 4v6c0 5-3.1 8-7 10-3.9-2-7-5-7-10V6l7-4z" />
+        <path d="M9.5 12.5l1.7 1.7 3.6-4" />
+      </>
+    ),
+    photo: (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="3" />
+        <circle cx="8.3" cy="9" r="1.4" />
+        <path d="M21 15l-4.2-4.2L7 20" />
+      </>
+    ),
+    check: <path d="M20 6L9 17l-5-5" />,
+    arrow: <path d="M5 12h14M13 6l6 6-6 6" />,
+  };
+
+  return <svg {...props}>{icons[n] ?? null}</svg>;
 }
 
-/* ══════════════════════════════════════════
-   TOAST
-══════════════════════════════════════════ */
-function Toast({ message, onDone }) {
-  useEffect(() => {
-    const t = setTimeout(onDone, 3000);
-    return () => clearTimeout(t);
-  }, [onDone]);
+function safeTimeAgo(dateStr) {
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return 'сейчас';
+  const diff = Date.now() - date.getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'сейчас';
+  if (minutes < 60) return `${minutes}м`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}ч`;
+  const days = Math.floor(hours / 24);
+  return `${days}д`;
+}
 
+function normalizeCategoryKey(value) {
+  const source = String(value ?? '').toLowerCase();
+  if (source.includes('road') || source.includes('яма') || source.includes('дорог') || source.includes('park')) return 'road';
+  if (source.includes('light') || source.includes('осв')) return 'lighting';
+  if (source.includes('waste') || source.includes('мусор') || source.includes('trash')) return 'waste';
+  if (source.includes('green') || source.includes('зелен')) return 'greenery';
+  if (source.includes('util') || source.includes('коммун') || source.includes('water')) return 'utilities';
+  if (source.includes('vandal') || source.includes('графф') || source.includes('ванд')) return 'vandal';
+  return 'other';
+}
+
+function normalizeSeverityKey(value, status) {
+  if (status === 'resolved' || status === 'verified') return 'resolved';
+  const source = String(value ?? '').toLowerCase();
+  if (source.includes('крит') || source === 'critical') return 'critical';
+  if (source.includes('выс') || source === 'high') return 'high';
+  if (source.includes('низ') || source === 'low') return 'low';
+  return 'medium';
+}
+
+function hashCount(id, seed) {
+  let hash = seed;
+  for (let index = 0; index < id.length; index += 1) {
+    hash = (hash * 31 + id.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash % 90) + 3;
+}
+
+function buildViewer(user) {
+  const role = user?.role || 'citizen';
+  const name =
+    user?.name
+    || user?.full_name
+    || user?.organization_name
+    || (role === 'government' ? 'Сотрудник акимата' : role === 'business' ? 'Представитель подрядчика' : 'Житель Алматы');
+
+  const initials = String(name)
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0])
+    .join('')
+    .toUpperCase() || 'ГА';
+
+  return {
+    name,
+    role,
+    roleLabel: REPORTER_ROLE_LABEL[role] || 'Гражданин',
+    initials,
+  };
+}
+
+function filterReports(reports, statusFilter, typeFilter, query) {
+  const q = query.trim().toLowerCase();
+  return reports.filter(report => {
+    const severity = normalizeSeverityKey(report.severity, report.status);
+    const category = normalizeCategoryKey(report.category ?? report.type);
+    const shared = isSharedCase(report);
+
+    if (statusFilter === 'urgent' && !['critical', 'high'].includes(severity)) return false;
+    if (statusFilter === 'in_progress' && !['in_progress', 'waiting_partner'].includes(report.status)) return false;
+    if (statusFilter === 'shared' && !shared) return false;
+    if (statusFilter === 'resolved' && !['resolved', 'verified'].includes(report.status)) return false;
+    if (typeFilter !== 'all' && category !== typeFilter) return false;
+
+    if (!q) return true;
+    const haystack = [
+      report.detected_issue_title,
+      report.title,
+      report.address,
+      report.ai_comment,
+      report.description,
+      report.comment,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(q);
+  });
+}
+
+function FilterChip({ active, children, onClick }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0,  scale: 1 }}
-      exit={{   opacity: 0, y: 10, scale: 0.95 }}
-      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-      style={{
-        position: 'fixed', bottom: 28, right: 28, zIndex: 9999,
-        background: 'rgba(255,255,255,0.9)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        border: '1px solid var(--border)',
-        borderRadius: 10, padding: '10px 16px',
-        display: 'flex', alignItems: 'center', gap: 8,
-        fontSize: 13, fontWeight: 500, color: '#0f172a',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
-      }}
+    <button
+      onClick={onClick}
+      className={`rounded-full border px-4 py-2 text-[13px] font-semibold transition ${
+        active
+          ? 'border-slate-900 bg-slate-900 text-white shadow-[0_10px_24px_rgba(15,23,42,0.18)]'
+          : 'border-white/70 bg-white/72 text-slate-600 backdrop-blur-xl hover:border-slate-200 hover:text-slate-900'
+      }`}
     >
-      <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(22,163,74,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Ic n="check" size={11} color="#16a34a" />
-      </div>
-      {message}
-    </motion.div>
+      {children}
+    </button>
   );
 }
 
-/* ══════════════════════════════════════════
-   MAIN COMPONENT
-══════════════════════════════════════════ */
-export default function FeedTab({ reports = [], onTabChange, user }) {
-  const [filter, setFilter] = useState('all');
-  const [liked, setLiked]   = useState({});
-  const [toast, setToast]   = useState(null);
-
-  const allReports = [...MOCK, ...[...reports].reverse()];
-  const isNews     = filter === 'news';
-  const filtered   = isNews ? [] : allReports.filter(r => {
-    if (filter === 'resolved') return r.status === 'resolved';
-    if (filter === 'near')     return true;
-    if (filter !== 'all')      return r.severity === filter;
-    return true;
-  });
-
-  const stats = {
-    critical: allReports.filter(r => r.severity === 'critical').length,
-    high:     allReports.filter(r => r.severity === 'high').length,
-    resolved: allReports.filter(r => r.status === 'resolved').length,
-    total:    allReports.length,
-  };
-
-  async function handleShare(report) {
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: report.type || 'Проблема города', text: report.ai_comment || '', url: window.location.href });
-      } else {
-        await navigator.clipboard.writeText(window.location.href);
-        setToast('Ссылка скопирована!');
-      }
-    } catch { /* cancelled */ }
-  }
-
-  const nav = id => onTabChange?.(id);
-
+function ThreadComposer({ draft, onDraftChange, onSubmit, submitLabel = 'Опубликовать' }) {
   return (
-    <div style={{
-      display: 'flex', height: '100vh', overflow: 'hidden',
-      background: 'var(--bg)',
-      fontFamily: "'DM Sans', system-ui, sans-serif",
-    }}>
-      {/* ── LEFT SIDEBAR ── */}
-      <Sidebar onNav={nav} user={user} />
-
-      {/* ── CENTER FEED ── */}
-      <main style={{
-        flex: 1, display: 'flex', flexDirection: 'column',
-        overflow: 'hidden', position: 'relative',
-        borderLeft: '1px solid var(--border)',
-        borderRight: '1px solid var(--border)',
-      }}>
-        {/* Sticky header */}
-        <div style={{
-          position: 'sticky', top: 0, zIndex: 10,
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          background: 'rgba(238,240,235,0.85)',
-          borderBottom: '1px solid var(--border)',
-        }}>
-          <div style={{ padding: '14px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#0f172a', letterSpacing: '-0.02em' }}>
-                {isNews ? 'Новости акимата' : 'Лента Алматы'}
-              </h1>
-              <p style={{ margin: '2px 0 0', fontSize: 12, color: '#94a3b8' }}>
-                {isNews ? `${NEWS_POSTS.length} публикаций` : `${filtered.length} репортов`}
-              </p>
-            </div>
-            <button
-              onClick={() => nav('report')}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                background: '#0f172a', color: '#fff',
-                borderRadius: 20, padding: '7px 16px',
-                fontSize: 13, fontWeight: 600, transition: 'opacity 0.15s',
-              }}
-              onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
-              onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-            >
-              <Ic n="plus" size={13} color="#fff" />
-              Сообщить
-            </button>
-          </div>
-
-          {/* Filter tabs */}
-          <div style={{ display: 'flex', padding: '10px 20px 0' }}>
-            {FILTERS.map(f => (
-              <button key={f.id} onClick={() => setFilter(f.id)} style={{
-                background: 'transparent', border: 'none',
-                color: filter === f.id ? '#0f172a' : '#94a3b8',
-                padding: '8px 14px', fontSize: 13,
-                fontWeight: filter === f.id ? 500 : 400,
-                cursor: 'pointer',
-                borderBottom: filter === f.id ? '2px solid #0f172a' : '2px solid transparent',
-                transition: 'color 0.15s, border-color 0.15s',
-              }}>
-                {f.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Posts */}
-        <div style={{ flex: 1, overflowY: 'auto', background: 'var(--surface)' }}>
-          {isNews ? (
-            <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 0 }}>
-              {NEWS_POSTS.map((post, i) => (
-                <NewsPost key={post.id} post={post} index={i}
-                  liked={!!liked[post.id]}
-                  onLike={() => setLiked(p => ({ ...p, [post.id]: !p[post.id] }))}
-                />
-              ))}
-            </div>
-          ) : filtered.length === 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 100 }}>
-              <Ic n="feed" size={32} color="#e2e8e0" />
-              <div style={{ marginTop: 14, fontSize: 14, color: '#94a3b8' }}>Нет репортов</div>
-            </div>
-          ) : (
-            <div>
-              {filtered.map((r, i) => (
-                <Post
-                  key={r.id} r={r} index={i}
-                  liked={!!liked[r.id]}
-                  onLike={() => setLiked(p => ({ ...p, [r.id]: !p[r.id] }))}
-                  onShare={() => handleShare(r)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </main>
-
-      {/* ── RIGHT PANEL ── */}
-      <RightPanel reports={allReports} stats={stats} onNav={nav} />
-
-      <AnimatePresence>
-        {toast && <Toast key="toast" message={toast} onDone={() => setToast(null)} />}
-      </AnimatePresence>
+    <div className="glass-panel-matte mt-4 rounded-[22px] px-4 py-4 shadow-matte-md">
+      <textarea
+        value={draft}
+        onChange={event => onDraftChange(event.target.value)}
+        placeholder="Добавьте комментарий по кейсу…"
+        className="min-h-[84px] w-full resize-none rounded-2xl border border-city-border bg-white/80 px-4 py-3 text-[14px] text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-slate-300"
+      />
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <div className="text-[12px] text-slate-400">Комментарии сохраняются и остаются после обновления страницы.</div>
+        <button onClick={onSubmit} className="glass-button-primary px-4 py-2 text-[13px]">
+          {submitLabel}
+        </button>
+      </div>
     </div>
   );
 }
 
-/* ══════════════════════════════════════════
-   SIDEBAR
-══════════════════════════════════════════ */
-function Sidebar({ onNav, user }) {
-  return (
-    <motion.aside
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      style={{
-        width: 240, flexShrink: 0,
-        background: 'rgba(255,255,255,0.75)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        borderRight: '1px solid var(--border)',
-        display: 'flex', flexDirection: 'column',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Logo */}
-      <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        <span style={{ fontWeight: 700, fontSize: 15, color: '#0f172a', letterSpacing: '-0.3px' }}>CityEye</span>
-        <div style={{ fontSize: 10, color: '#94a3b8', letterSpacing: '1.5px', textTransform: 'uppercase', marginTop: 2 }}>
-          Алматы
-        </div>
+function CommentList({ comments }) {
+  if (comments.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-city-border bg-white/55 px-4 py-4 text-[13px] text-slate-500">
+        Пока нет комментариев. Начните обсуждение под обращением.
       </div>
+    );
+  }
 
-      {/* Nav */}
-      <nav style={{ padding: '8px 10px', flex: 1 }}>
-        {NAV.map((item, i) => (
-          <motion.button
-            key={item.id}
-            initial={{ opacity: 0, x: -12 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: i * 0.05 + 0.1, duration: 0.3 }}
-            onClick={() => onNav(item.id)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              width: '100%', padding: '9px 10px', borderRadius: 8,
-              background: item.id === 'feed' ? 'rgba(0,0,0,0.06)' : 'transparent',
-              color: item.id === 'feed' ? '#0f172a' : '#64748b',
-              border: 'none', cursor: 'pointer',
-              fontSize: 14, fontWeight: item.id === 'feed' ? 500 : 400,
-              textAlign: 'left', marginBottom: 2, transition: 'all 0.15s',
-            }}
-            onMouseEnter={e => { if (item.id !== 'feed') e.currentTarget.style.background = 'rgba(0,0,0,0.03)'; }}
-            onMouseLeave={e => { if (item.id !== 'feed') e.currentTarget.style.background = 'transparent'; }}
-          >
-            <Ic n={item.icon} size={16} color={item.id === 'feed' ? '#0f172a' : '#94a3b8'} />
-            {item.label}
-          </motion.button>
-        ))}
-      </nav>
-
-      {/* User */}
-      {user?.role === 'government' ? (
-        <div style={{ padding: '12px 14px', borderTop: '1px solid rgba(99,102,241,0.15)', display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(99,102,241,0.04)' }}>
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <img
-              src={user.avatar}
-              alt={user.name}
-              style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '2px solid #6366f1', display: 'block' }}
-              onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
-            />
-            <div style={{
-              display: 'none', width: 36, height: 36, borderRadius: '50%',
-              background: '#eef2ff', border: '2px solid #6366f1',
-              alignItems: 'center', justifyContent: 'center',
-              fontSize: 12, fontWeight: 700, color: '#6366f1',
-            }}>
-              {user.initials}
+  return (
+    <div className="space-y-3">
+      {comments.map(comment => (
+        <div key={comment.id} className="rounded-2xl border border-white/75 bg-white/74 px-4 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-700">
+              {comment.initials}
             </div>
-            <div style={{ position: 'absolute', bottom: 0, right: 0, width: 9, height: 9, borderRadius: '50%', background: '#22c55e', border: '1.5px solid #fff' }} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="truncate text-[13px] font-semibold text-slate-900">{comment.author_name}</span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  {comment.author_role_label}
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-400">{safeTimeAgo(comment.created_at)}</div>
+            </div>
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.name}</div>
-            <div style={{ fontSize: 11, color: '#6366f1' }}>Зам. акима Алматы</div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-            <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e' }} />
-            <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 500 }}>Онлайн</span>
-          </div>
+          <div className="mt-3 text-[14px] leading-6 text-slate-700">{comment.body}</div>
         </div>
-      ) : user?.role === 'business' ? (
-        <div style={{ padding: '12px 14px', borderTop: '1px solid rgba(15,118,110,0.15)', display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(15,118,110,0.04)' }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: '50%',
-            background: '#ccfbf1', border: '2px solid #14b8a6',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 12, fontWeight: 700, color: '#0f766e', flexShrink: 0,
-          }}>
-            {user.initials}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.name}</div>
-            <div style={{ fontSize: 11, color: '#0f766e' }}>{user.position}</div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-            <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#14b8a6' }} />
-            <span style={{ fontSize: 10, color: '#0f766e', fontWeight: 500 }}>Бизнес</span>
-          </div>
-        </div>
-      ) : (
-        <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: '50%',
-            background: 'var(--surface2)', border: '1px solid var(--border)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }}>
-            <Ic n="user" size={14} color="#94a3b8" />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: '#0f172a' }}>Гражданин</div>
-            <div style={{ fontSize: 11, color: '#94a3b8' }}>Алматы</div>
-          </div>
-          <button onClick={() => onNav('report')} style={{
-            width: 26, height: 26, borderRadius: '50%',
-            background: '#0f172a',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', flexShrink: 0, transition: 'opacity 0.15s',
-          }}
-            onMouseEnter={e => e.currentTarget.style.opacity = '0.75'}
-            onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-          >
-            <Ic n="plus" size={13} color="#fff" />
-          </button>
-        </div>
-      )}
-    </motion.aside>
+      ))}
+    </div>
   );
 }
 
-/* ══════════════════════════════════════════
-   POST
-══════════════════════════════════════════ */
-function Post({ r, index, liked, onLike, onShare }) {
-  const sev      = SEV_CONFIG[r.status === 'resolved' ? 'resolved' : r.severity] ?? SEV_CONFIG.medium;
-  const st       = ST_CONFIG[r.status] ?? ST_CONFIG.new;
-  const initials = CAT_INITIALS[r.type] ?? 'ГО';
-  const handle   = CAT_HANDLE[r.type]   ?? '@gorod';
-  const likes    = fakeN(r.id, 7);
-  const comments = fakeN(r.id, 13);
-  const reposts  = fakeN(r.id, 17);
-  const isCritical = r.severity === 'critical' && r.status !== 'resolved';
-
+function ActionButton({ icon, label, active = false, onClick }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 14 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05, duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-      style={{
-        padding: '16px 24px',
-        borderBottom: '1px solid var(--border)',
-        display: 'flex', gap: 14,
-        cursor: 'pointer', transition: 'background 0.15s',
-      }}
-      whileHover={{ backgroundColor: 'rgba(0,0,0,0.015)' }}
-    >
-      {/* Avatar column */}
-      <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <motion.div
-          animate={isCritical ? { boxShadow: ['0 0 0 0 rgba(220,38,38,0.35)', '0 0 0 8px rgba(220,38,38,0)', '0 0 0 0 rgba(220,38,38,0)'] } : {}}
-          transition={isCritical ? { duration: 2, repeat: Infinity, ease: 'easeOut' } : {}}
-          style={{
-            width: 40, height: 40, borderRadius: '50%',
-            background: sev.avatarBg,
-            border: `1px solid ${sev.avatarColor}40`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }}
-        >
-          <span style={{ fontSize: 12, fontWeight: 700, color: sev.avatarColor, letterSpacing: '-0.5px' }}>
-            {initials}
-          </span>
-        </motion.div>
-        <div style={{ width: 1.5, flex: 1, minHeight: 20, background: 'var(--border)', marginTop: 8 }} />
-      </div>
-
-      {/* Content */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {/* Header row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
-            {CAT_LABEL[r.type] ?? r.type ?? 'Городская проблема'}
-          </span>
-          <span style={{ fontSize: 13, color: '#94a3b8' }}>{handle}</span>
-          <div style={{ width: 5, height: 5, borderRadius: '50%', background: st.color, flexShrink: 0, marginLeft: 2 }} />
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: '#94a3b8', whiteSpace: 'nowrap' }}>
-            {timeAgo(r.created_at)}
-          </span>
-        </div>
-
-        {/* Title */}
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#1e293b', marginBottom: 5, lineHeight: 1.4 }}>
-          {r.type || r.title || 'Городская проблема'}
-        </div>
-
-        {/* Text */}
-        <p style={{ margin: '0 0 10px', fontSize: 14, color: '#64748b', lineHeight: 1.65 }}>
-          {r.ai_comment || r.description || ''}
-        </p>
-
-        {/* Photo */}
-        {(r.image_url || r.image) ? (
-          <img
-            src={r.image_url || r.image}
-            alt=""
-            style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 10, marginBottom: 10, display: 'block' }}
-          />
-        ) : (
-          <div style={{
-            height: 120, borderRadius: 10,
-            background: 'var(--surface2)',
-            border: '1px solid var(--border)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            marginBottom: 10,
-          }}>
-            <Ic n="photo" size={26} color="#c8d4c4" />
-          </div>
-        )}
-
-        {/* Address */}
-        {r.address && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#94a3b8', fontSize: 12, marginBottom: 10 }}>
-            <Ic n="pin" size={11} color="#94a3b8" />
-            {r.address}
-          </div>
-        )}
-
-        {/* Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginTop: 4 }}>
-          <ActionBtn
-            icon={
-              <motion.div whileTap={{ scale: 1.3 }} transition={{ duration: 0.15 }}>
-                <Ic n="heart" size={17} color={liked ? '#dc2626' : '#94a3b8'} fill={liked ? '#dc2626' : 'none'} />
-              </motion.div>
-            }
-            label={liked ? likes + 1 : likes}
-            active={liked} activeColor="#dc2626" onClick={onLike}
-          />
-          <ActionBtn icon={<Ic n="msg" size={17} color="#94a3b8" />} label={comments} onClick={() => {}} />
-          <ActionBtn icon={<Ic n="repeat" size={17} color="#94a3b8" />} label={reposts} onClick={() => {}} />
-          <div style={{ flex: 1 }} />
-          <ActionBtn icon={<Ic n="share" size={16} color="#94a3b8" />} label="Поделиться" onClick={onShare} />
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-function ActionBtn({ icon, label, onClick, active, activeColor }) {
-  return (
-    <button onClick={onClick} style={{
-      display: 'flex', alignItems: 'center', gap: 5,
-      background: 'transparent', border: 'none',
-      color: active ? activeColor : '#94a3b8',
-      padding: '5px 8px', borderRadius: 8,
-      fontSize: 13, fontWeight: 400, cursor: 'pointer', transition: 'color 0.15s',
-    }}
-      onMouseEnter={e => { e.currentTarget.style.color = active ? activeColor : '#0f172a'; }}
-      onMouseLeave={e => { e.currentTarget.style.color = active ? activeColor : '#94a3b8'; }}
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-[13px] font-semibold transition ${
+        active
+          ? 'bg-slate-900 text-white'
+          : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+      }`}
     >
       {icon}
       {label}
@@ -664,260 +355,582 @@ function ActionBtn({ icon, label, onClick, active, activeColor }) {
   );
 }
 
-/* ══════════════════════════════════════════
-   NEWS POST  (Threads-style)
-══════════════════════════════════════════ */
-function NewsPost({ post, index, liked, onLike }) {
-  const [imgError, setImgError] = useState(false);
-  const [commentHover, setCommentHover] = useState(false);
-  const [shareHover, setShareHover]     = useState(false);
+function ReportThread({
+  report,
+  threadId,
+  liked,
+  comments,
+  commentsOpen,
+  draft,
+  onToggleLike,
+  onToggleComments,
+  onDraftChange,
+  onSubmitComment,
+  onShare,
+  onOpenMap,
+}) {
+  const severityKey = normalizeSeverityKey(report.severity, report.status);
+  const severity = SEVERITY_META[severityKey] ?? SEVERITY_META.medium;
+  const status = REPORT_STATUS_LABEL[report.status] || 'Новый';
+  const category = normalizeCategoryKey(report.category ?? report.type);
+  const categoryMeta = CATEGORY_META[category] ?? CATEGORY_META.other;
+  const title = report.detected_issue_title || report.title || categoryMeta.label;
+  const route = getResponsibleRole(report);
+  const routeStyle = RESPONSIBILITY_STYLE[route] ?? RESPONSIBILITY_STYLE.government;
+  const routeLabel = RESPONSIBILITY_LABEL[route] ?? 'Акимат';
+  const reporterLabel = REPORTER_ROLE_LABEL[getReporterRole(report)] ?? 'Гражданин';
+  const reporterName = getReporterName(report);
+  const assignedOrg = getAssignedOrgName(report);
+  const ai = getAIDossier(report);
+  const confidence = normalizeConfidenceLabel(report.confidence_label, 'medium');
+  const baseLikes = hashCount(threadId, 9);
+  const beforeImage = report.image_url || report.image || null;
+  const afterImage = report.completion_image_url || null;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
+    <motion.article
+      initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.07, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      style={{ padding: '20px 0', borderBottom: '1px solid #f0f0f0', display: 'flex', gap: 14 }}
+      transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
+      className="border-b border-city-border/70 px-5 py-5 last:border-b-0 sm:px-7"
     >
-      {/* Left column — avatar + thread line */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: 44 }}>
-        <div style={{ position: 'relative' }}>
-          {!imgError ? (
-            <img
-              src={post.avatar}
-              alt={post.author}
-              style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', border: '2px solid #6366f1', display: 'block' }}
-              onError={() => setImgError(true)}
-            />
-          ) : (
-            <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#eef2ff', border: '2px solid #6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#6366f1' }}>
-              {post.initials}
-            </div>
-          )}
-          {/* Online dot */}
-          <div style={{ position: 'absolute', bottom: 1, right: 1, width: 10, height: 10, borderRadius: '50%', background: '#22c55e', border: '2px solid #fff' }} />
-        </div>
-        {/* Thread line */}
-        <div style={{ width: 2, flex: 1, minHeight: 24, background: 'linear-gradient(to bottom, #e0e0e0 0%, transparent 100%)', marginTop: 6, borderRadius: 2 }} />
-      </div>
-
-      {/* Right column — content */}
-      <div style={{ flex: 1, minWidth: 0, paddingBottom: 4 }}>
-
-        {/* Author row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-          <span style={{ fontWeight: 700, fontSize: 14.5, color: '#0f172a', letterSpacing: '-0.2px' }}>{post.author}</span>
-          {/* Verified check */}
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="#6366f1" style={{ flexShrink: 0 }}>
-            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-          </svg>
-          <span style={{ fontSize: 10, fontWeight: 700, background: '#eef2ff', color: '#6366f1', padding: '2px 8px', borderRadius: 20, letterSpacing: '0.2px' }}>Официально</span>
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: '#b0b8c4', flexShrink: 0 }}>{post.time}</span>
-        </div>
-
-        {/* Sub-line */}
-        <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>{post.position}</div>
-
-        {/* Title */}
-        <div style={{ fontSize: 15, fontWeight: 700, color: '#111827', lineHeight: 1.45, marginBottom: 9 }}>
-          {post.title}
-        </div>
-
-        {/* Body text */}
-        <div style={{ fontSize: 14, color: '#374151', lineHeight: 1.7, marginBottom: 14 }}>
-          {post.content}
-        </div>
-
-        {/* Metric pill */}
-        {post.metric && (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 12, padding: '8px 16px', marginBottom: 14 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            <span style={{ fontSize: 14, fontWeight: 700, color: '#16a34a' }}>{post.metric}</span>
+      <div className="flex gap-4">
+        <div className="flex w-11 flex-shrink-0 flex-col items-center">
+          <div
+            className="flex h-11 w-11 items-center justify-center rounded-full border text-[12px] font-bold shadow-[0_10px_22px_rgba(15,23,42,0.08)]"
+            style={{ borderColor: `${categoryMeta.color}33`, color: categoryMeta.color, background: `${categoryMeta.color}12` }}
+          >
+            {categoryMeta.initials}
           </div>
-        )}
-
-        {/* Tags */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-          {post.tags.map(tag => (
-            <span key={tag} style={{ fontSize: 13, color: '#6366f1', fontWeight: 500 }}>#{tag}</span>
-          ))}
+          <div className="mt-3 h-full w-px min-h-8 bg-gradient-to-b from-slate-200 via-slate-100 to-transparent" />
         </div>
 
-        {/* Action row — Threads style icon buttons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-500">
+                <span className="font-semibold text-slate-900">{categoryMeta.label}</span>
+                <span>{reporterLabel}: {reporterName}</span>
+                <span className="h-1 w-1 rounded-full bg-slate-300" />
+                <span>{safeTimeAgo(report.created_at)}</span>
+              </div>
+              <div className="mt-1 text-[19px] font-semibold tracking-[-0.03em] text-slate-950">{title}</div>
+            </div>
+            <div
+              className="rounded-full border px-3 py-1 text-[11px] font-semibold"
+              style={{ background: severity.bg, borderColor: severity.border, color: severity.color }}
+            >
+              {severity.label}
+            </div>
+          </div>
 
-          {/* Like */}
-          <motion.button
-            onClick={onLike}
-            whileTap={{ scale: 1.2 }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              color: liked ? '#e11d48' : '#9ca3af',
-              padding: '6px 10px 6px 0', fontSize: 13, fontWeight: 500,
-              transition: 'color 0.15s',
-            }}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill={liked ? '#e11d48' : 'none'} stroke={liked ? '#e11d48' : '#9ca3af'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-            </svg>
-            <span>{liked ? post.stats.likes + 1 : post.stats.likes}</span>
-          </motion.button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span
+              className="rounded-full border px-3 py-1 text-[11px] font-semibold"
+              style={{ background: routeStyle.bg, borderColor: routeStyle.border, color: routeStyle.color }}
+            >
+              {routeLabel}
+            </span>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold text-slate-600">
+              {status}
+            </span>
+            {isSharedCase(report) ? (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700">
+                Shared-case
+              </span>
+            ) : null}
+            {report.confidence_label ? (
+              <span
+                className="rounded-full border px-3 py-1 text-[11px] font-semibold"
+                style={{
+                  background: ai.confidence.bg,
+                  borderColor: ai.confidence.border,
+                  color: ai.confidence.color,
+                }}
+              >
+                AI {String(confidence).toUpperCase()}
+              </span>
+            ) : null}
+          </div>
 
-          {/* Comment */}
-          <button
-            onMouseEnter={() => setCommentHover(true)}
-            onMouseLeave={() => setCommentHover(false)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              color: commentHover ? '#0f172a' : '#9ca3af',
-              padding: '6px 10px', fontSize: 13, fontWeight: 500,
-              transition: 'color 0.15s',
-            }}
-          >
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            </svg>
-            <span>{post.stats.comments}</span>
-          </button>
+          <div className="mt-4 text-[15px] leading-7 text-slate-700">
+            {report.ai_comment || report.description || report.comment || 'Описание пока не добавлено.'}
+          </div>
 
-          {/* Share */}
-          <button
-            onMouseEnter={() => setShareHover(true)}
-            onMouseLeave={() => setShareHover(false)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              color: shareHover ? '#0f172a' : '#9ca3af',
-              padding: '6px 10px', fontSize: 13, fontWeight: 500,
-              transition: 'color 0.15s',
-            }}
-          >
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-            </svg>
-            <span>{post.stats.shares}</span>
-          </button>
+          <div className="mt-4 grid gap-3 text-[13px] text-slate-500 sm:grid-cols-2">
+            <div className="rounded-2xl border border-white/70 bg-white/72 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Источник</div>
+              <div className="mt-2 font-semibold text-slate-900">{reporterName}</div>
+            </div>
+            <div className="rounded-2xl border border-white/70 bg-white/72 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Исполнитель</div>
+              <div className="mt-2 font-semibold text-slate-900">{assignedOrg || routeLabel}</div>
+            </div>
+          </div>
+
+          {beforeImage || afterImage ? (
+            <div className={`mt-4 grid gap-3 ${beforeImage && afterImage ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
+              {beforeImage ? (
+                <div className="overflow-hidden rounded-[22px] border border-city-border bg-white/70">
+                  <div className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">До</div>
+                  <img src={beforeImage} alt="До" className="mt-2 h-52 w-full object-cover" />
+                </div>
+              ) : null}
+              {afterImage ? (
+                <div className="overflow-hidden rounded-[22px] border border-emerald-200 bg-emerald-50/70">
+                  <div className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-600">После</div>
+                  <img src={afterImage} alt="После" className="mt-2 h-52 w-full object-cover" />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-[13px] text-slate-500">
+            {report.address ? (
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-2">
+                <Ic n="pin" size={14} color="#64748b" />
+                {report.address}
+              </span>
+            ) : null}
+            {report.partner_comment ? (
+              <span className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-2 text-amber-700">
+                <Ic n="spark" size={14} color="#c2410c" />
+                Есть координационный комментарий
+              </span>
+            ) : null}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <ActionButton
+              active={liked}
+              onClick={onToggleLike}
+              icon={<Ic n="heart" size={16} color={liked ? '#ffffff' : '#94a3b8'} fill={liked ? '#ffffff' : 'none'} />}
+              label={liked ? `${baseLikes + 1}` : `${baseLikes}`}
+            />
+            <ActionButton
+              active={commentsOpen}
+              onClick={onToggleComments}
+              icon={<Ic n="msg" size={16} color={commentsOpen ? '#ffffff' : '#94a3b8'} />}
+              label={`${comments.length}`}
+            />
+            <ActionButton onClick={onOpenMap} icon={<Ic n="pin" size={16} color="#94a3b8" />} label="На карте" />
+            <ActionButton onClick={onShare} icon={<Ic n="share" size={16} color="#94a3b8" />} label="Поделиться" />
+          </div>
+
+          <AnimatePresence initial={false}>
+            {commentsOpen ? (
+              <motion.div
+                initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                animate={{ opacity: 1, height: 'auto', marginTop: 18 }}
+                exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                transition={{ duration: 0.22 }}
+                className="overflow-hidden"
+              >
+                <div className="space-y-4 rounded-[24px] border border-city-border/70 bg-[#f7faf7]/95 px-4 py-4">
+                  <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    <Ic n="msg" size={14} color="#94a3b8" />
+                    Обсуждение кейса
+                  </div>
+                  <CommentList comments={comments} />
+                  <ThreadComposer
+                    draft={draft}
+                    onDraftChange={onDraftChange}
+                    onSubmit={onSubmitComment}
+                    submitLabel="Добавить комментарий"
+                  />
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </div>
       </div>
-    </motion.div>
+    </motion.article>
   );
 }
 
-/* ══════════════════════════════════════════
-   RIGHT PANEL
-══════════════════════════════════════════ */
-function RightPanel({ reports, stats, onNav }) {
+function NewsThread({
+  post,
+  threadId,
+  comments,
+  commentsOpen,
+  draft,
+  liked,
+  onToggleLike,
+  onToggleComments,
+  onDraftChange,
+  onSubmitComment,
+  onShare,
+}) {
   return (
-    <motion.aside
-      initial={{ opacity: 0, x: 20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.4, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-      style={{
-        width: 300, flexShrink: 0,
-        padding: '24px 18px',
-        overflowY: 'auto',
-        borderLeft: '1px solid var(--border)',
-        background: 'rgba(255,255,255,0.6)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-      }}
+    <motion.article
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
+      className="border-b border-city-border/70 px-5 py-5 last:border-b-0 sm:px-7"
     >
-      {/* Stats grid */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 12 }}>
-          Статистика
+      <div className="flex gap-4">
+        <div className="flex w-11 flex-shrink-0 flex-col items-center">
+          <div className="flex h-11 w-11 items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 text-indigo-600 shadow-[0_10px_22px_rgba(99,102,241,0.12)]">
+            <Ic n="official" size={18} color="#6366f1" />
+          </div>
+          <div className="mt-3 h-full w-px min-h-8 bg-gradient-to-b from-indigo-200 via-slate-100 to-transparent" />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {[
-            { label: 'Всего',    value: stats.total,    color: '#0f172a' },
-            { label: 'Критично', value: stats.critical,  color: '#dc2626' },
-            { label: 'Высокий',  value: stats.high,      color: '#d97706' },
-            { label: 'Решено',   value: stats.resolved,  color: '#16a34a' },
-          ].map((s, i) => (
-            <motion.div
-              key={s.label}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.06 + 0.2 }}
-              style={{
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                borderRadius: 10, padding: '12px 14px',
-              }}
-            >
-              <div style={{ fontSize: 28, fontWeight: 600, color: s.color, lineHeight: 1 }}>
-                {s.value}
-              </div>
-              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{s.label}</div>
-            </motion.div>
-          ))}
-        </div>
-      </div>
 
-      {/* Hotspots */}
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 12 }}>
-          Горячие точки
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {HOTSPOTS.map((h, i) => (
-            <motion.div
-              key={h.district}
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.06 + 0.25 }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '8px 10px', borderRadius: 8,
-                cursor: 'pointer', transition: 'background 0.15s',
-              }}
-              whileHover={{ backgroundColor: 'rgba(0,0,0,0.03)' }}
-            >
-              <div style={{
-                width: 28, height: 28, borderRadius: 7,
-                background: `${h.color}12`,
-                border: `1px solid ${h.color}30`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-              }}>
-                <Ic n="pin" size={13} color={h.color} />
-              </div>
-              <span style={{ flex: 1, fontSize: 13, color: '#64748b' }}>{h.district}</span>
-              <span style={{
-                fontSize: 12, fontWeight: 600, color: h.color,
-                background: `${h.color}12`, borderRadius: 20, padding: '2px 8px',
-              }}>
-                {h.count}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-500">
+            <span className="font-semibold text-slate-900">Ruslan Berdenov</span>
+            <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-indigo-600">
+              Официально
+            </span>
+            <span className="h-1 w-1 rounded-full bg-slate-300" />
+            <span>{post.time}</span>
+          </div>
+          <div className="mt-1 text-[19px] font-semibold tracking-[-0.03em] text-slate-950">{post.title}</div>
+          <div className="mt-4 text-[15px] leading-7 text-slate-700">{post.content}</div>
+
+          {post.metric ? (
+            <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] font-semibold text-emerald-700">
+              <Ic n="check" size={14} color="#16a34a" />
+              {post.metric}
+            </div>
+          ) : null}
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            {post.tags.map(tag => (
+              <span key={tag} className="rounded-full bg-white/70 px-3 py-1 text-[12px] font-semibold text-slate-500">
+                #{tag}
               </span>
-            </motion.div>
-          ))}
+            ))}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <ActionButton
+              active={liked}
+              onClick={onToggleLike}
+              icon={<Ic n="heart" size={16} color={liked ? '#ffffff' : '#94a3b8'} fill={liked ? '#ffffff' : 'none'} />}
+              label={liked ? `${(post.stats?.shares ?? 12) + 1}` : `${post.stats?.shares ?? 12}`}
+            />
+            <ActionButton
+              active={commentsOpen}
+              onClick={onToggleComments}
+              icon={<Ic n="msg" size={16} color={commentsOpen ? '#ffffff' : '#94a3b8'} />}
+              label={`${comments.length}`}
+            />
+            <ActionButton onClick={onShare} icon={<Ic n="share" size={16} color="#94a3b8" />} label="Поделиться" />
+          </div>
+
+          <AnimatePresence initial={false}>
+            {commentsOpen ? (
+              <motion.div
+                initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                animate={{ opacity: 1, height: 'auto', marginTop: 18 }}
+                exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                transition={{ duration: 0.22 }}
+                className="overflow-hidden"
+              >
+                <div className="space-y-4 rounded-[24px] border border-city-border/70 bg-[#f7faf7]/95 px-4 py-4">
+                  <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    <Ic n="msg" size={14} color="#94a3b8" />
+                    Обсуждение публикации
+                  </div>
+                  <CommentList comments={comments} />
+                  <ThreadComposer
+                    draft={draft}
+                    onDraftChange={onDraftChange}
+                    onSubmit={onSubmitComment}
+                    submitLabel="Ответить"
+                  />
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </div>
       </div>
+    </motion.article>
+  );
+}
 
-      {/* CTA */}
-      <motion.button
-        onClick={() => onNav('report')}
-        initial={{ opacity: 0, y: 8 }}
+export default function FeedTab({ reports = [], onTabChange, user, onOpenReportOnMap }) {
+  const [view, setView] = useState('reports');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [query, setQuery] = useState('');
+  const [openComments, setOpenComments] = useState({});
+  const [drafts, setDrafts] = useState({});
+  const [commentsMap, setCommentsMap] = useState(() => readFeedComments());
+  const [likesMap, setLikesMap] = useState(() => readFeedLikes());
+  const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    writeFeedComments(commentsMap);
+  }, [commentsMap]);
+
+  useEffect(() => {
+    writeFeedLikes(likesMap);
+  }, [likesMap]);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timer = window.setTimeout(() => setToast(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  const feedReports = useMemo(() => {
+    const base = reports.length > 0 ? reports : MOCK_REPORTS;
+    return [...base].sort((left, right) => new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime());
+  }, [reports]);
+
+  const typeOptions = useMemo(() => {
+    const set = new Set(feedReports.map(report => normalizeCategoryKey(report.category ?? report.type)));
+    return ['all', ...set];
+  }, [feedReports]);
+
+  const filteredReports = useMemo(
+    () => filterReports(feedReports, statusFilter, typeFilter, query),
+    [feedReports, statusFilter, typeFilter, query]
+  );
+
+  const viewer = useMemo(() => buildViewer(user), [user]);
+
+  function toggleLike(threadId) {
+    setLikesMap(current => ({
+      ...current,
+      [threadId]: !current[threadId],
+    }));
+  }
+
+  function toggleComments(threadId) {
+    setOpenComments(current => ({
+      ...current,
+      [threadId]: !current[threadId],
+    }));
+  }
+
+  function handleSubmitComment(threadId) {
+    const draft = String(drafts[threadId] ?? '').trim();
+    if (!draft) return;
+
+    const nextComment = {
+      id: `${threadId}-${Date.now()}`,
+      body: draft,
+      author_name: viewer.name,
+      author_role: viewer.role,
+      author_role_label: viewer.roleLabel,
+      initials: viewer.initials,
+      created_at: new Date().toISOString(),
+    };
+
+    setCommentsMap(current => ({
+      ...current,
+      [threadId]: [...(current[threadId] ?? []), nextComment],
+    }));
+    setDrafts(current => ({ ...current, [threadId]: '' }));
+    setOpenComments(current => ({ ...current, [threadId]: true }));
+    setToast('Комментарий добавлен');
+  }
+
+  async function handleShare(item, type) {
+    const shareUrl = window.location.href;
+    const title = type === 'news' ? item.title : (item.detected_issue_title || item.title || 'Городская проблема');
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title,
+          text: item.ai_comment || item.content || '',
+          url: shareUrl,
+        });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        setToast('Ссылка скопирована');
+      }
+    } catch {
+      /* ignore cancelled share */
+    }
+  }
+
+  function handleOpenMap(report) {
+    onOpenReportOnMap?.(report);
+    if (!onOpenReportOnMap) {
+      onTabChange?.('map');
+    }
+  }
+
+  const visibleItems = view === 'reports' ? filteredReports : NEWS_POSTS;
+
+  return (
+    <div className="mx-auto flex w-full max-w-[1080px] flex-1 flex-col px-4 pb-10 pt-6 sm:px-6 lg:px-8">
+      <motion.section
+        initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5 }}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-          width: '100%', marginTop: 20,
-          background: '#0f172a', color: '#fff',
-          border: 'none', borderRadius: 10,
-          padding: '10px 0', fontSize: 13, fontWeight: 600,
-          cursor: 'pointer', transition: 'opacity 0.15s',
-        }}
-        onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
-        onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        className="glass-panel-matte relative overflow-hidden rounded-[30px] px-5 py-5 shadow-matte-xl sm:px-6"
       >
-        <Ic n="plus" size={14} color="#fff" />
-        Сообщить о проблеме
-      </motion.button>
-    </motion.aside>
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -left-10 top-0 h-28 w-40 rounded-full bg-[radial-gradient(circle,rgba(59,130,246,0.12)_0%,rgba(59,130,246,0)_72%)]" />
+          <div className="absolute right-0 top-0 h-32 w-44 rounded-full bg-[radial-gradient(circle,rgba(16,185,129,0.12)_0%,rgba(16,185,129,0)_74%)]" />
+          <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/70 to-transparent" />
+        </div>
+
+        <div className="relative flex flex-col gap-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-[28px] font-semibold tracking-[-0.05em] text-slate-950">Лента Алматы</h1>
+                <span className="glass-chip border-white/80 bg-white/75 px-3 py-1.5 text-[11px] font-semibold text-slate-500 shadow-none">
+                  {view === 'reports' ? `${filteredReports.length} кейсов` : `${NEWS_POSTS.length} публикации`}
+                </span>
+              </div>
+              <div className="mt-1 text-[13px] text-slate-400">
+                {view === 'reports' ? 'Городские обращения, совместные кейсы и фотофиксация результата.' : 'Официальные обновления и отчёты по городу.'}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 self-start lg:self-auto">
+              <span className="hidden rounded-full border border-white/80 bg-white/70 px-3 py-2 text-[12px] font-semibold text-slate-500 md:inline-flex">
+                Алматы
+              </span>
+              <button onClick={() => onTabChange?.('report')} className="glass-button-primary px-5 py-3 text-[14px]">
+                <span className="inline-flex items-center gap-2">
+                  <Ic n="plus" size={16} color="#ffffff" />
+                  Сообщить
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-4 border-t border-white/70 pt-4">
+          <div className="flex flex-wrap gap-2">
+            {VIEW_TABS.map(tab => (
+              <FilterChip key={tab.id} active={view === tab.id} onClick={() => setView(tab.id)}>
+                {tab.label}
+              </FilterChip>
+            ))}
+          </div>
+
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="relative min-w-0 flex-1 max-w-[420px]">
+                <div className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">
+                  <Ic n="search" size={16} color="#94a3b8" />
+              </div>
+              <input
+                value={query}
+                onChange={event => setQuery(event.target.value)}
+                placeholder="Поиск по адресу, диагнозу или описанию"
+                className="w-full rounded-full border border-white/75 bg-white/78 py-3 pl-11 pr-4 text-[14px] text-slate-700 outline-none backdrop-blur-xl placeholder:text-slate-400 focus:border-slate-300"
+              />
+            </div>
+
+              {view === 'reports' ? (
+                <div className="flex flex-wrap gap-2">
+                  {STATUS_FILTERS.map(item => (
+                    <FilterChip key={item.id} active={statusFilter === item.id} onClick={() => setStatusFilter(item.id)}>
+                      {item.label}
+                    </FilterChip>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            {view === 'reports' ? (
+              <div className="flex flex-wrap gap-2">
+                {typeOptions.map(type => {
+                  const meta = CATEGORY_META[type] ?? CATEGORY_META.other;
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => setTypeFilter(type)}
+                      className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13px] font-semibold transition ${
+                        typeFilter === type
+                          ? 'border-slate-900 bg-slate-900 text-white'
+                          : 'border-white/75 bg-white/72 text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ background: typeFilter === type ? 'rgba(255,255,255,0.85)' : meta.color }}
+                      />
+                      {type === 'all' ? 'Все типы' : meta.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </motion.section>
+
+      <div className="mt-6 overflow-hidden rounded-[30px] border border-city-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.84)_0%,rgba(248,250,248,0.92)_100%)] shadow-matte-xl backdrop-blur-xl">
+        {visibleItems.length === 0 ? (
+          <div className="flex flex-col items-center px-6 py-20 text-center">
+            <div className="glass-chip mb-3">
+              <Ic n="spark" size={14} color="#64748b" />
+              Лента пустая
+            </div>
+            <h2 className="text-[22px] font-semibold tracking-[-0.03em] text-slate-950">Ничего не найдено по текущим фильтрам</h2>
+            <p className="mt-2 max-w-[440px] text-[14px] leading-6 text-slate-500">
+              Сбросьте часть фильтров или воспользуйтесь поиском, чтобы посмотреть больше обращений по городу.
+            </p>
+          </div>
+        ) : view === 'reports' ? (
+          filteredReports.map(report => {
+            const threadId = `report:${report.id}`;
+            return (
+              <ReportThread
+                key={threadId}
+                report={report}
+                threadId={threadId}
+                liked={Boolean(likesMap[threadId])}
+                comments={commentsMap[threadId] ?? []}
+                commentsOpen={Boolean(openComments[threadId])}
+                draft={drafts[threadId] ?? ''}
+                onToggleLike={() => toggleLike(threadId)}
+                onToggleComments={() => toggleComments(threadId)}
+                onDraftChange={value => setDrafts(current => ({ ...current, [threadId]: value }))}
+                onSubmitComment={() => handleSubmitComment(threadId)}
+                onShare={() => handleShare(report, 'report')}
+                onOpenMap={() => handleOpenMap(report)}
+              />
+            );
+          })
+        ) : (
+          NEWS_POSTS.map(post => {
+            const threadId = `news:${post.id}`;
+            return (
+              <NewsThread
+                key={threadId}
+                post={post}
+                threadId={threadId}
+                liked={Boolean(likesMap[threadId])}
+                comments={commentsMap[threadId] ?? []}
+                commentsOpen={Boolean(openComments[threadId])}
+                draft={drafts[threadId] ?? ''}
+                onToggleLike={() => toggleLike(threadId)}
+                onToggleComments={() => toggleComments(threadId)}
+                onDraftChange={value => setDrafts(current => ({ ...current, [threadId]: value }))}
+                onSubmitComment={() => handleSubmitComment(threadId)}
+                onShare={() => handleShare(post, 'news')}
+              />
+            );
+          })
+        )}
+      </div>
+
+      <AnimatePresence>
+        {toast ? (
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.98 }}
+            transition={{ duration: 0.2 }}
+            className="glass-panel-matte fixed bottom-6 right-6 z-50 rounded-2xl px-4 py-3 shadow-matte-lg"
+          >
+            <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-900">
+              <Ic n="check" size={14} color="#16a34a" />
+              {toast}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
   );
 }

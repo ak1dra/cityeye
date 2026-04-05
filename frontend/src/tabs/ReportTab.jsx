@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { analyzeImage } from '../api';
+import { analyzeImage, analyzeImageStream, createReport } from '../api';
 import { AITriagePanel } from '../components/AITriagePanel';
 import { getAIDossier } from '../lib/aiTriage';
 import { buildCollaborationFields } from '../lib/reportCollaboration';
+import { VoiceInput } from '../components/VoiceInput';
 
 const MIN_CONTEXT_COMMENT = 8;
 
@@ -79,6 +80,208 @@ const PIN_SVG = encodeURIComponent(`
   </svg>
 `);
 
+const PIPELINE_STEP_META = {
+  input_ocr: { icon: '\uD83D\uDCF7', label: 'OCR анализ фото', sub: 'Извлекаем визуальный контекст' },
+  classify: { icon: '\uD83E\uDDE0', label: 'Классификация', sub: 'Qwen определяет тип и severity' },
+  embed: { icon: '\uD83D\uDD17', label: 'Векторизация', sub: 'Собираем семантический вектор кейса' },
+  dedup: { icon: '\uD83D\uDD0D', label: 'Dedup', sub: 'Ищем похожие кейсы и соседние точки' },
+  route: { icon: '\u2192', label: 'Маршрутизация', sub: 'Определяем owner и контур исполнения' },
+  score: { icon: '\uD83C\uDFAF', label: 'Скоринг', sub: 'Считаем приоритет и давление на поток' },
+  explain: { icon: '\uD83D\uDCA1', label: 'Explainability', sub: 'Собираем обоснование AI решения' },
+};
+
+const PIPELINE_ORDER = ['input_ocr', 'classify', 'embed', 'dedup', 'route', 'score', 'explain'];
+
+function createInitialPipelineState() {
+  return PIPELINE_ORDER.map(step => ({
+    step,
+    state: 'pending',
+    latency_ms: null,
+    result: '',
+    meta: {},
+    error: '',
+  }));
+}
+
+function mergePipelineState(current, incoming) {
+  const next = current.map(step => ({ ...step }));
+  const targetIndex = next.findIndex(step => step.step === incoming.step);
+  if (targetIndex === -1) return current;
+
+  next[targetIndex] = {
+    ...next[targetIndex],
+    ...incoming,
+  };
+  return next;
+}
+
+function PipelineStepCard({ step, compact = false }) {
+  const meta = PIPELINE_STEP_META[step.step];
+  if (!meta) return null;
+
+  const isRunning = step.state === 'step_started';
+  const isDone = step.state === 'step_completed';
+  const isFailed = step.state === 'step_failed';
+  const palette = isFailed
+    ? { bg: '#fff1f2', border: '#fecdd3', title: '#be123c', sub: '#9f1239', badge: '#ffe4e6' }
+    : isDone
+      ? { bg: '#f0fdf4', border: '#bbf7d0', title: '#15803d', sub: '#166534', badge: '#dcfce7' }
+      : isRunning
+        ? { bg: '#eef2ff', border: '#c7d2fe', title: '#3730a3', sub: '#4338ca', badge: '#e0e7ff' }
+        : { bg: '#f8fafc', border: '#e2e8f0', title: '#0f172a', sub: '#94a3b8', badge: '#f1f5f9' };
+
+  return (
+    <div
+      style={{
+        borderRadius: 14,
+        border: `1px solid ${palette.border}`,
+        background: palette.bg,
+        padding: compact ? '10px 12px' : '12px 14px',
+        minHeight: compact ? 84 : 96,
+        transition: 'all 0.24s ease',
+        boxShadow: isRunning ? '0 12px 28px rgba(99,102,241,0.14)' : 'none',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      {isRunning && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'linear-gradient(120deg, rgba(99,102,241,0.04) 0%, rgba(99,102,241,0.12) 48%, rgba(99,102,241,0.04) 100%)',
+            animation: 'traceSweep 1.9s linear infinite',
+            transform: 'translateX(-100%)',
+          }}
+        />
+      )}
+
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <div
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 10,
+            background: palette.badge,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 16,
+            flexShrink: 0,
+          }}
+        >
+          {isDone ? '\u2713' : meta.icon}
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: palette.title }}>{meta.label}</div>
+          <div style={{ marginTop: 4, fontSize: 11, color: palette.sub, lineHeight: 1.45 }}>
+            {isFailed ? (step.error || 'Шаг завершился с ошибкой') : (step.result || meta.sub)}
+          </div>
+        </div>
+        {isRunning ? (
+          <div style={{
+            width: 14, height: 14, border: '2px solid #6366f1', borderTopColor: 'transparent',
+            borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginTop: 4,
+          }} />
+        ) : null}
+      </div>
+
+      {(step.latency_ms != null || step.meta?.branch === 'parallel') && (
+        <div style={{ position: 'relative', marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {step.meta?.branch === 'parallel' && (
+            <span style={pipelineMetaBadgeStyle}>Parallel branch</span>
+          )}
+          {step.latency_ms != null && (
+            <span style={pipelineMetaBadgeStyle}>{step.latency_ms}ms</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LivePipelineTrace({
+  steps,
+  loading,
+  totalLatency,
+  streamMode,
+  fallbackNotice,
+}) {
+  if (!loading && !steps.some(step => step.state !== 'pending')) return null;
+
+  const verticalSteps = steps.filter(step => !['classify', 'embed'].includes(step.step));
+  const classifyStep = steps.find(step => step.step === 'classify');
+  const embedStep = steps.find(step => step.step === 'embed');
+
+  return (
+    <div style={{
+      borderRadius: 20,
+      background: 'linear-gradient(145deg, rgba(255,255,255,0.96), rgba(239,244,255,0.94))',
+      border: '1px solid #dbe4ff',
+      padding: 18,
+      marginBottom: 16,
+      boxShadow: '0 16px 40px rgba(15,23,42,0.06)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 800, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 4 }}>
+            AI decision timeline
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#0f172a' }}>
+            {loading ? 'Пайплайн выполняется в реальном времени' : 'Пайплайн завершён'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <span style={pipelineMetaBadgeStyle}>{streamMode === 'live' ? 'Live SSE' : 'Standard analyze'}</span>
+          {totalLatency != null ? <span style={pipelineMetaBadgeStyle}>Total {totalLatency}ms</span> : null}
+        </div>
+      </div>
+
+      {fallbackNotice ? (
+        <div style={{
+          marginBottom: 12,
+          borderRadius: 12,
+          border: '1px solid #fde68a',
+          background: '#fffbeb',
+          color: '#92400e',
+          padding: '10px 12px',
+          fontSize: 12,
+          lineHeight: 1.5,
+        }}>
+          {fallbackNotice}
+        </div>
+      ) : null}
+
+      <div style={{ display: 'grid', gap: 10 }}>
+        {verticalSteps.slice(0, 1).map(step => (
+          <PipelineStepCard key={step.step} step={step} />
+        ))}
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <PipelineStepCard step={classifyStep} compact />
+          <PipelineStepCard step={embedStep} compact />
+        </div>
+
+        {verticalSteps.slice(1).map(step => (
+          <PipelineStepCard key={step.step} step={step} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const pipelineMetaBadgeStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  borderRadius: 999,
+  padding: '4px 9px',
+  fontSize: 10,
+  fontWeight: 700,
+  color: '#475569',
+  border: '1px solid #dbe4f1',
+  background: 'rgba(255,255,255,0.74)',
+};
+
 function buildContextSignature({ photoFile, selectedType, address, comment, reporterRole }) {
   if (!photoFile) return '';
 
@@ -91,7 +294,7 @@ function buildContextSignature({ photoFile, selectedType, address, comment, repo
   });
 }
 
-export default function ReportTab({ onNewReport }) {
+export default function ReportTab({ onNewReport, user, onRequireAuth }) {
   const [selectedType, setSelectedType] = useState('');
   const [address, setAddress] = useState('');
   const [comment, setComment] = useState('');
@@ -105,15 +308,19 @@ export default function ReportTab({ onNewReport }) {
   const [result, setResult] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [analyzedSignature, setAnalyzedSignature] = useState('');
+  const [pipelineSteps, setPipelineSteps] = useState(() => createInitialPipelineState());
+  const [pipelineLatency, setPipelineLatency] = useState(null);
+  const [traceMode, setTraceMode] = useState('idle');
+  const [traceFallbackNotice, setTraceFallbackNotice] = useState('');
 
   const fileInputRef = useRef(null);
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const placemarkRef = useRef(null);
   const pendingAnalyzeSignature = useRef('');
+  const analyzeAbortRef = useRef(null);
 
-  const currentUser = JSON.parse(localStorage.getItem('cityeye_user') || 'null');
-  const reporterRole = currentUser?.role || 'citizen';
+  const reporterRole = user?.role || 'citizen';
   const isBusinessAuthor = reporterRole === 'business';
   const hasPhoto = Boolean(photoFile);
   const hasContext = Boolean(selectedType || address.trim() || comment.trim().length >= MIN_CONTEXT_COMMENT);
@@ -173,6 +380,13 @@ export default function ReportTab({ onNewReport }) {
     };
   }, []);
 
+  function resetPipelineTrace() {
+    setPipelineSteps(createInitialPipelineState());
+    setPipelineLatency(null);
+    setTraceMode('idle');
+    setTraceFallbackNotice('');
+  }
+
   async function runAnalyze(signature = contextSignature, resetOutput = false) {
     if (!photoFile) {
       setError('Для AI triage сначала загрузите фото.');
@@ -184,30 +398,82 @@ export default function ReportTab({ onNewReport }) {
       return;
     }
 
+    analyzeAbortRef.current?.abort?.();
+    analyzeAbortRef.current = new AbortController();
     pendingAnalyzeSignature.current = signature;
     setLoading(true);
     setError(null);
+    resetPipelineTrace();
+    setTraceMode('live');
+    setTraceFallbackNotice('');
     if (resetOutput) setResult(null);
 
     try {
-      const data = await analyzeImage({
+      const payload = {
         problemType: selectedType,
         address: address.trim(),
         comment: comment.trim(),
         reporter_role: reporterRole,
         image_present: true,
-      });
+        lat: location?.lat ?? null,
+        lng: location?.lng ?? null,
+      };
+
+      let data;
+
+      try {
+        data = await analyzeImageStream(payload, {
+          signal: analyzeAbortRef.current.signal,
+          onEvent: ({ event, data: eventData }) => {
+            if (pendingAnalyzeSignature.current !== signature) return;
+
+            if (event === 'step_started' || event === 'step_completed' || event === 'step_failed') {
+              setPipelineSteps(current => mergePipelineState(current, eventData));
+              return;
+            }
+
+            if (event === 'pipeline_completed') {
+              setPipelineLatency(eventData.latency_ms ?? null);
+            }
+          },
+        });
+      } catch (streamError) {
+        if (streamError?.name === 'AbortError') {
+          return;
+        }
+
+        const shouldFallback =
+          streamError?.message === 'STREAM_UNAVAILABLE'
+          || streamError?.message === 'Failed to fetch';
+
+        if (!shouldFallback) {
+          throw streamError;
+        }
+
+        setTraceMode('fallback');
+        setTraceFallbackNotice('Streaming progress недоступен. Переключились на стандартный analyze без live-таймлайна.');
+        data = await analyzeImage(payload);
+      }
 
       if (pendingAnalyzeSignature.current !== signature) return;
 
       setResult(data);
       setAnalyzedSignature(signature);
+      setPipelineLatency(data?.pipeline_latency_ms ?? null);
+      if (Array.isArray(data?.ai_pipeline_trace) && data.ai_pipeline_trace.length > 0) {
+        setPipelineSteps(current => data.ai_pipeline_trace.reduce(
+          (acc, step) => mergePipelineState(acc, { ...step, state: 'step_completed' }),
+          current
+        ));
+      }
     } catch (err) {
+      if (err?.name === 'AbortError') return;
       if (pendingAnalyzeSignature.current !== signature) return;
       setError(err.message || 'Не удалось выполнить AI triage.');
     } finally {
       if (pendingAnalyzeSignature.current === signature) {
         setLoading(false);
+        analyzeAbortRef.current = null;
       }
     }
   }
@@ -224,9 +490,11 @@ export default function ReportTab({ onNewReport }) {
   }, [hasPhoto, hasContext, saving, submitted, loading, contextSignature, analyzedSignature, isResultStale]);
 
   function resetAnalyzeState() {
+    analyzeAbortRef.current?.abort?.();
     pendingAnalyzeSignature.current = '';
     setResult(null);
     setAnalyzedSignature('');
+    resetPipelineTrace();
   }
 
   function removePhoto() {
@@ -255,6 +523,12 @@ export default function ReportTab({ onNewReport }) {
   }
 
   async function handleSubmit() {
+    if (!user) {
+      setError('Чтобы отправить обращение, сначала войдите в аккаунт.');
+      onRequireAuth?.('sign-in', 'citizen');
+      return;
+    }
+
     if (!photoFile) {
       setError('Добавьте фото, чтобы отправить кейс в AI-assisted triage flow.');
       return;
@@ -288,11 +562,8 @@ export default function ReportTab({ onNewReport }) {
         imageUrl = urlData.publicUrl;
       }
 
-      const storedUser = JSON.parse(localStorage.getItem('cityeye_user') || '{}');
-      const collaborationFields = buildCollaborationFields(storedUser);
+      const collaborationFields = buildCollaborationFields(user);
       const payload = {
-        user_email: storedUser.email || 'anonymous',
-        user_name: storedUser.name || 'Гражданин',
         type: result?.type || selectedType || 'other',
         category: result?.type || selectedType || 'other',
         detected_issue_title: result?.detected_issue_title,
@@ -315,8 +586,7 @@ export default function ReportTab({ onNewReport }) {
         ...collaborationFields,
       };
 
-      const { error: insertError } = await supabase.from('reports').insert(payload);
-      if (insertError) throw new Error(insertError.message);
+      await createReport(payload);
 
       onNewReport?.();
       setSubmitted(true);
@@ -363,7 +633,7 @@ export default function ReportTab({ onNewReport }) {
           </h2>
           <p style={{ margin: '0 0 20px', fontSize: 14, color: '#64748b', lineHeight: 1.7 }}>
             {isBusinessAuthor
-              ? 'AI оформил кейс как заявку частного сектора и подготовил его для совместной работы с акиматом.'
+              ? 'AI оформил кейс как заявку подрядчика и подготовил его для совместной работы с акиматом.'
               : 'AI сформировал досье кейса и отправил его в городской контур исполнения.'}
           </p>
 
@@ -422,7 +692,7 @@ export default function ReportTab({ onNewReport }) {
             Shared-case mode
           </div>
           <div style={{ fontSize: 14, color: '#475569', lineHeight: 1.65 }}>
-            Кейс от частного сектора сразу получает AI-triage и уходит в видимый контур совместной работы с акиматом.
+            Кейс от подрядчика сразу получает AI-triage и уходит в видимый контур совместной работы с акиматом.
           </div>
         </div>
       )}
@@ -571,10 +841,16 @@ export default function ReportTab({ onNewReport }) {
       </div>
 
       <div style={cardStyle}>
-        <SectionTitle>Контекст для AI</SectionTitle>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <SectionTitle>Контекст для AI</SectionTitle>
+          <VoiceInput
+            onTranscript={(text) => setComment(prev => prev ? prev + ' ' + text : text)}
+            disabled={loading}
+          />
+        </div>
         <textarea
           rows={4}
-          placeholder="Коротко опишите, что видно на фото, насколько опасна проблема и что мешает жителям."
+          placeholder="Коротко опишите проблему или нажмите микрофон для голосового ввода на казахском/русском."
           value={comment}
           onChange={event => setComment(event.target.value)}
           style={textareaStyle}
@@ -631,19 +907,13 @@ export default function ReportTab({ onNewReport }) {
 
       {(result || loading) && (
         <div style={{ ...cardStyle, padding: 18 }}>
-          {loading && !result && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderRadius: 14, background: '#eef4ff', border: '1px solid #bfdbfe', marginBottom: 16 }}>
-              <div style={spinnerBlueStyle} />
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#1d4ed8', marginBottom: 4 }}>
-                  AI triage анализирует кейс
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.6 }}>
-                  Формируем severity, priority score, suggested route и recommended action.
-                </div>
-              </div>
-            </div>
-          )}
+          <LivePipelineTrace
+            steps={pipelineSteps}
+            loading={loading}
+            totalLatency={pipelineLatency}
+            streamMode={traceMode}
+            fallbackNotice={traceFallbackNotice}
+          />
 
           {result && <AITriagePanel data={result} title="AI-досье кейса" />}
 
@@ -720,6 +990,10 @@ export default function ReportTab({ onNewReport }) {
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes traceSweep {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
         input:focus, textarea:focus {
           border-color: #6366f1 !important;
           box-shadow: 0 0 0 3px rgba(99,102,241,0.1);

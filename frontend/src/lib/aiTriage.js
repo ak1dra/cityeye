@@ -20,8 +20,8 @@ export const AI_ROUTE_META = {
     border: '#c7d2fe',
   },
   business: {
-    label: 'Передать бизнесу',
-    shortLabel: 'Бизнес',
+    label: 'Передать подрядчику',
+    shortLabel: 'Подрядчик',
     color: '#0f766e',
     bg: '#ccfbf1',
     border: '#99f6e4',

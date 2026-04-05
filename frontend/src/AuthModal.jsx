@@ -10,7 +10,7 @@ const ACCOUNTS = {
 const ROLE_LABEL = {
   citizen: 'Гражданин',
   government: 'Гос. служащий',
-  business: 'Бизнес',
+  business: 'Подрядчик',
 };
 
 export default function AuthModal({ onClose, onLogin }) {
@@ -120,9 +120,9 @@ export default function AuthModal({ onClose, onLogin }) {
                 }
               />
 
-              {/* Бизнес */}
+              {/* Подрядчик */}
               <RoleCard
-                label="Бизнес"
+                label="Подрядчик"
                 iconColor="#0f766e"
                 iconBg="rgba(15,118,110,0.1)"
                 onClick={() => selectRole('business')}

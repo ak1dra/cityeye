@@ -1,10 +1,9 @@
 import { randomUUID } from 'crypto';
-import { readFile, writeFile } from 'fs/promises';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPORTS_PATH = join(__dirname, '../data/reports.json');
+const DEFAULT_SUPABASE_URL = 'https://dvwfjpqbnusjegwtpyau.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_mWjsSlxFpcKVUmMwwO8UpQ_SFggnJf5';
+const SUPABASE_URL = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).replace(/\/$/, '');
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
 
 export const VALID_STATUSES = ['new', 'triage', 'in_progress', 'waiting_partner', 'resolved', 'verified', 'rejected'];
 export const VALID_SEVERITIES = ['critical', 'high', 'medium', 'low'];
@@ -46,6 +45,17 @@ export const PATCHABLE_REPORT_FIELDS = [
   'responsible_role',
   'assigned_org_name',
   'shared_case',
+  'contractor_org_name',
+  'operator_org_name',
+  'asset_type',
+  'asset_owner',
+  'service_zone',
+  'warranty_until',
+  'responsibility_mode',
+  'work_order_status',
+  'sla_due_at',
+  'proof_status',
+  'verification_score',
 ];
 
 const CATEGORY_ALIASES = new Map([
@@ -149,6 +159,15 @@ function toBooleanOrNull(value) {
   return null;
 }
 
+function toIsoTimestampOrNull(value) {
+  const raw = toStringOrNull(value);
+  if (!raw) return null;
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -214,18 +233,59 @@ function defaultPriorityScore(severity) {
   return 50;
 }
 
-export async function readReports() {
+function supabaseHeaders(extraHeaders = {}, authToken = null) {
+  return {
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${authToken || SUPABASE_ANON_KEY}`,
+    'Content-Type': 'application/json',
+    ...extraHeaders,
+  };
+}
+
+async function readSupabaseJson(response) {
+  const text = await response.text();
+  if (!text) return null;
+
   try {
-    const raw = await readFile(REPORTS_PATH, 'utf8');
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    return JSON.parse(text);
   } catch {
-    return [];
+    return null;
   }
 }
 
-export async function writeReports(reports) {
-  await writeFile(REPORTS_PATH, JSON.stringify(reports, null, 2));
+async function supabaseRequest(path, options = {}) {
+  const response = await fetch(`${SUPABASE_URL}${path}`, {
+    ...options,
+    headers: supabaseHeaders(options.headers, options.authToken),
+  });
+
+  const payload = await readSupabaseJson(response);
+
+  if (!response.ok) {
+    const message =
+      payload?.message
+      || payload?.error_description
+      || payload?.hint
+      || payload?.details
+      || payload?.error
+      || 'Supabase request failed';
+
+    const error = new Error(message);
+    error.statusCode = response.status;
+    throw error;
+  }
+
+  return payload;
+}
+
+async function readReportById(id) {
+  const rows = await supabaseRequest(`/rest/v1/reports?select=*&id=eq.${encodeURIComponent(id)}&limit=1`);
+  return Array.isArray(rows) ? rows[0] ?? null : null;
+}
+
+export async function readReports() {
+  const rows = await supabaseRequest('/rest/v1/reports?select=*&order=created_at.desc');
+  return Array.isArray(rows) ? rows : [];
 }
 
 export function normalizeCategory(value) {
@@ -396,12 +456,16 @@ function normalizeCollaborationFields(payload = {}) {
     assignedOrgName = null;
   }
 
+  const contractorOrgName = toStringOrNull(payload.contractor_org_name)
+    ?? ((responsibleRole === 'business' || responsibleRole === 'shared') ? assignedOrgName : null);
+
   return {
     reporter_role: reporterRole,
     reporter_org_name: reporterOrgName,
     responsible_role: responsibleRole,
     assigned_org_name: assignedOrgName,
     shared_case: sharedCase,
+    contractor_org_name: contractorOrgName,
   };
 }
 
@@ -464,11 +528,23 @@ export function normalizeReportPayload(payload = {}) {
     user_name: userName,
     completion_image_url: toStringOrNull(payload.completion_image_url),
     partner_comment: toStringOrNull(payload.partner_comment),
+    operator_org_name: toStringOrNull(payload.operator_org_name),
+    asset_type: toStringOrNull(payload.asset_type),
+    asset_owner: toStringOrNull(payload.asset_owner),
+    service_zone: toStringOrNull(payload.service_zone),
+    warranty_until: toIsoTimestampOrNull(payload.warranty_until),
+    responsibility_mode: toStringOrNull(payload.responsibility_mode),
+    work_order_status: toStringOrNull(payload.work_order_status),
+    sla_due_at: toIsoTimestampOrNull(payload.sla_due_at),
+    proof_status: toStringOrNull(payload.proof_status),
+    verification_score: toNumberOrNull(payload.verification_score) == null
+      ? null
+      : clamp(Math.round(toNumberOrNull(payload.verification_score)), 0, 100),
     ...collaboration,
   };
 }
 
-export async function createReport(payload = {}) {
+export async function createReport(payload = {}, options = {}) {
   const normalized = normalizeReportPayload(payload);
   const now = new Date().toISOString();
   const report = {
@@ -478,41 +554,51 @@ export async function createReport(payload = {}) {
     updated_at: now,
   };
 
-  const reports = await readReports();
-  reports.push(report);
-  await writeReports(reports);
-  return report;
+  const rows = await supabaseRequest('/rest/v1/reports?select=*', {
+    method: 'POST',
+    authToken: options.authToken,
+    headers: {
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify(report),
+  });
+
+  return Array.isArray(rows) ? rows[0] ?? report : report;
 }
 
-export async function updateReport(id, patch = {}) {
-  const reports = await readReports();
-  const index = reports.findIndex(report => report.id === id);
-
-  if (index === -1) {
+export async function updateReport(id, patch = {}, options = {}) {
+  const existing = await readReportById(id);
+  if (!existing) {
     const err = new Error('Report not found');
     err.statusCode = 404;
     throw err;
   }
 
-  const existing = reports[index];
   const normalized = normalizeReportPayload({ ...existing, ...patch });
-
-  reports[index] = {
+  const nextReport = {
     ...existing,
     ...normalized,
     updated_at: new Date().toISOString(),
   };
 
-  await writeReports(reports);
-  return reports[index];
+  const rows = await supabaseRequest(`/rest/v1/reports?id=eq.${encodeURIComponent(id)}&select=*`, {
+    method: 'PATCH',
+    authToken: options.authToken,
+    headers: {
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify(nextReport),
+  });
+
+  return Array.isArray(rows) ? rows[0] ?? nextReport : nextReport;
 }
 
-export async function updateReportStatus(id, status, extraFields = {}) {
+export async function updateReportStatus(id, status, extraFields = {}, options = {}) {
   if (!VALID_STATUSES.includes(status)) {
     const err = new Error(`status must be one of: ${VALID_STATUSES.join(', ')}`);
     err.statusCode = 400;
     throw err;
   }
 
-  return updateReport(id, { ...extraFields, status });
+  return updateReport(id, { ...extraFields, status }, options);
 }

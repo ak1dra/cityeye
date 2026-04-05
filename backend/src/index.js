@@ -1,7 +1,16 @@
 import 'dotenv/config';
 import express from 'express';
 import analyzeRouter from '../routes/analyze.js';
+import analyticsRouter from '../routes/analytics.js';
 import assistantRouter from '../routes/assistant.js';
+import speechToTextRouter from '../routes/speechToText.js';
+import verifyRouter from '../routes/verify.js';
+import {
+  buildReportAuthorFields,
+  requireAuthenticatedProfile,
+  requireManagedRole,
+  requireReportCreator,
+} from './auth.js';
 import {
   createReport,
   readReports,
@@ -36,7 +45,10 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use('/api/analyze', analyzeRouter);
+app.use('/api/analytics', analyticsRouter);
 app.use('/api/assistant', assistantRouter);
+app.use('/api/speech-to-text', speechToTextRouter);
+app.use('/api/verify', verifyRouter);
 
 app.get('/api/reports', async (_req, res) => {
   try {
@@ -46,7 +58,7 @@ app.get('/api/reports', async (_req, res) => {
   }
 });
 
-app.post('/api/reports', async (req, res) => {
+app.post('/api/reports', requireAuthenticatedProfile, requireReportCreator, async (req, res) => {
   const payload = req.body ?? {};
   const hasMeaningfulInput = ['title', 'description', 'image', 'address', 'comment', 'type', 'category', 'problemType']
     .some(key => typeof payload[key] === 'string' && payload[key].trim().length > 0);
@@ -58,14 +70,20 @@ app.post('/api/reports', async (req, res) => {
   }
 
   try {
-    const report = await createReport(payload);
+    const report = await createReport(
+      {
+        ...payload,
+        ...buildReportAuthorFields(req.auth.profile),
+      },
+      { authToken: req.auth.token }
+    );
     res.status(201).json(report);
   } catch {
     res.status(500).json({ error: 'Failed to create report' });
   }
 });
 
-app.patch('/api/reports/:id', async (req, res) => {
+app.patch('/api/reports/:id', requireAuthenticatedProfile, requireManagedRole, async (req, res) => {
   const { id } = req.params;
   const payload = req.body ?? {};
   const hasPatchField = PATCHABLE_REPORT_FIELDS.some(field =>
@@ -87,7 +105,7 @@ app.patch('/api/reports/:id', async (req, res) => {
   }
 
   try {
-    const updated = await updateReport(id, payload);
+    const updated = await updateReport(id, payload, { authToken: req.auth.token });
     res.json(updated);
   } catch (err) {
     if (err.statusCode) {

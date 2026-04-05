@@ -1,33 +1,21 @@
 import { getAIDossier } from '../lib/aiTriage';
+import { ExplainabilityCard } from './ExplainabilityCard';
 
 function MetaCell({ label, value }) {
   return (
-    <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: '10px 12px' }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 4 }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', lineHeight: 1.5 }}>
-        {value}
-      </div>
+    <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5">
+      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</div>
+      <div className="text-[13px] font-semibold text-slate-900 leading-relaxed">{value}</div>
     </div>
   );
 }
 
 function Pill({ tone, children }) {
   return (
-    <span style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 6,
-      padding: '5px 10px',
-      borderRadius: 999,
-      background: tone.bg,
-      color: tone.color,
-      border: `1px solid ${tone.border}`,
-      fontSize: 12,
-      fontWeight: 700,
-      whiteSpace: 'nowrap',
-    }}>
+    <span
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap"
+      style={{ background: tone.bg, color: tone.color, border: `1px solid ${tone.border}` }}
+    >
       {children}
     </span>
   );
@@ -40,35 +28,25 @@ export function AITriagePanel({
   showHeader = true,
 }) {
   const dossier = getAIDossier(data);
-
   if (!dossier.hasTriage) return null;
 
   const urgencyGradient = dossier.priorityScore >= 80
-    ? 'linear-gradient(90deg, #f97316 0%, #dc2626 100%)'
+    ? 'from-orange-500 to-red-600'
     : dossier.priorityScore >= 55
-      ? 'linear-gradient(90deg, #f59e0b 0%, #f97316 100%)'
-      : 'linear-gradient(90deg, #2563eb 0%, #22c55e 100%)';
+      ? 'from-amber-400 to-orange-500'
+      : 'from-blue-500 to-green-500';
 
   return (
-    <div style={{
-      background: compact ? 'linear-gradient(135deg,#f8fbff,#eef4ff)' : 'linear-gradient(135deg,#f9fbff,#eef2ff)',
-      border: '1px solid #c7d2fe',
-      borderRadius: compact ? 14 : 16,
-      padding: compact ? 14 : 18,
-      marginBottom: compact ? 12 : 16,
-    }}>
+    <div className={`bg-gradient-to-br from-slate-50 to-indigo-50 border border-indigo-300 ${compact ? 'rounded-[14px] p-3.5 mb-3' : 'rounded-2xl p-[18px] mb-4'}`}>
       {showHeader && (
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+        <div className="flex items-start justify-between gap-2.5 mb-3 flex-wrap">
           <div>
-            <div style={{ fontSize: 11, color: '#6366f1', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 4 }}>
-              {title}
-            </div>
-            <div style={{ fontSize: compact ? 15 : 18, fontWeight: 800, color: '#0f172a', lineHeight: 1.35 }}>
+            <div className="text-[11px] text-indigo-500 font-extrabold uppercase tracking-wider mb-1">{title}</div>
+            <div className={`font-extrabold text-slate-900 leading-tight ${compact ? 'text-[15px]' : 'text-lg'}`}>
               {dossier.diagnosisTitle}
             </div>
           </div>
-
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div className="flex gap-2 flex-wrap">
             <Pill tone={dossier.severity}>{dossier.severity.label}</Pill>
             <Pill tone={dossier.confidence}>{dossier.confidence.shortLabel}</Pill>
             <Pill tone={dossier.suggestedRole}>{dossier.suggestedRole.shortLabel}</Pill>
@@ -76,56 +54,48 @@ export function AITriagePanel({
         </div>
       )}
 
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 6 }}>
-          <span style={{ fontSize: 11, color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.7px' }}>
-            Срочность AI-triage
-          </span>
-          <span style={{ fontSize: 12, color: '#0f172a', fontWeight: 700 }}>
-            {dossier.priorityScore}/100
-          </span>
+      {/* Priority bar */}
+      <div className="mb-3">
+        <div className="flex justify-between items-center mb-1.5">
+          <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Срочность AI-triage</span>
+          <span className="text-xs text-slate-900 font-bold">{dossier.priorityScore}/100</span>
         </div>
-        <div style={{ height: 8, borderRadius: 999, background: 'rgba(148,163,184,0.15)', overflow: 'hidden' }}>
-          <div style={{
-            width: `${dossier.priorityScore}%`,
-            height: '100%',
-            background: urgencyGradient,
-            borderRadius: 999,
-          }} />
+        <div className="h-2 rounded-full bg-slate-200/40 overflow-hidden">
+          <div className={`h-full bg-gradient-to-r ${urgencyGradient} rounded-full`} style={{ width: `${dossier.priorityScore}%` }} />
         </div>
       </div>
 
+      {/* AI Comment */}
       {dossier.aiComment && (
-        <div style={{
-          padding: compact ? '10px 12px' : '12px 14px',
-          borderRadius: 12,
-          background: '#fff',
-          border: '1px solid #dbeafe',
-          marginBottom: 12,
-          fontSize: compact ? 13 : 14,
-          color: '#475569',
-          lineHeight: 1.65,
-        }}>
+        <div className={`bg-white border border-blue-100 rounded-xl mb-3 text-slate-600 leading-relaxed ${compact ? 'px-3 py-2.5 text-[13px]' : 'px-3.5 py-3 text-sm'}`}>
           {dossier.aiComment}
         </div>
       )}
 
-      {compact ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-          <MetaCell label="AI маршрут" value={dossier.suggestedRole.label} />
-          <MetaCell label="Департамент" value={dossier.responsibleDept || 'Требует уточнения'} />
-          <MetaCell label="Риск" value={dossier.riskFor || 'Нужна выездная проверка'} />
-          <MetaCell label="Действие" value={dossier.recommendedAction || 'Назначить исполнителя и выезд'} />
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-          <MetaCell label="AI маршрут" value={dossier.suggestedRole.label} />
-          <MetaCell label="Ожидаемый срок" value={dossier.estimatedFixTime || 'Требует уточнения'} />
-          <MetaCell label="Риск" value={dossier.riskFor || 'Нужна дополнительная проверка'} />
-          <MetaCell label="Ответственный" value={dossier.responsibleDept || 'Определяется при triage'} />
-          <MetaCell label="План действий" value={dossier.recommendedAction || 'Назначить исполнителя и провести осмотр'} />
-          <MetaCell label="Повтор" value={dossier.duplicateLikely ? 'Вероятно дублируется' : 'Новый кейс'} />
-        </div>
+      {/* Meta grid */}
+      <div className="grid grid-cols-2 gap-2.5">
+        {compact ? (
+          <>
+            <MetaCell label="AI маршрут" value={dossier.suggestedRole.label} />
+            <MetaCell label="Департамент" value={dossier.responsibleDept || 'Требует уточнения'} />
+            <MetaCell label="Риск" value={dossier.riskFor || 'Нужна выездная проверка'} />
+            <MetaCell label="Действие" value={dossier.recommendedAction || 'Назначить исполнителя и выезд'} />
+          </>
+        ) : (
+          <>
+            <MetaCell label="AI маршрут" value={dossier.suggestedRole.label} />
+            <MetaCell label="Ожидаемый срок" value={dossier.estimatedFixTime || 'Требует уточнения'} />
+            <MetaCell label="Риск" value={dossier.riskFor || 'Нужна дополнительная проверка'} />
+            <MetaCell label="Ответственный" value={dossier.responsibleDept || 'Определяется при triage'} />
+            <MetaCell label="План действий" value={dossier.recommendedAction || 'Назначить исполнителя и провести осмотр'} />
+            <MetaCell label="Повтор" value={dossier.duplicateLikely ? 'Вероятно дублируется' : 'Новый кейс'} />
+          </>
+        )}
+      </div>
+
+      {/* Explainability */}
+      {data?.explainability && (
+        <ExplainabilityCard explainability={data.explainability} pipelineTrace={data.ai_pipeline_trace} />
       )}
     </div>
   );

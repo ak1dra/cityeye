@@ -1,3 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
 *, *::before, *::after { box-sizing: border-box; }
 
 :root {
@@ -61,6 +68,32 @@ select { appearance: none; cursor: pointer; }
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 4px; }
+
+@layer components {
+  .glass-shell {
+    @apply relative h-screen overflow-hidden bg-city-bg;
+  }
+
+  .glass-panel-matte {
+    @apply rounded-[22px] border border-white/80 bg-white/70 shadow-matte-xl backdrop-blur-2xl;
+  }
+
+  .glass-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-city-border bg-white/80 px-2.5 py-1 text-[11px] font-bold text-slate-700 shadow-matte;
+  }
+
+  .glass-button-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-city-text px-4 py-3 text-sm font-semibold text-white shadow-matte-lg transition hover:opacity-90;
+  }
+
+  .glass-button-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-city-border bg-white/80 px-4 py-3 text-sm font-semibold text-city-muted shadow-matte transition hover:border-city-border-hover hover:bg-white;
+  }
+
+  .glass-drawer {
+    @apply glass-panel-matte h-full min-h-0 overflow-hidden;
+  }
+}
 
 /* ══════════════════════════
    GLASS CLASSES — light

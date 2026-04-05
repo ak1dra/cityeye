@@ -62,6 +62,35 @@ function normalizeStringArray(value, fallback = []) {
   return fallback;
 }
 
+function normalizeHotspots(value, fallback = []) {
+  if (!Array.isArray(value)) return fallback;
+
+  const normalized = value
+    .map(item => {
+      if (!item || typeof item !== 'object') return null;
+
+      const label = toNonEmptyString(item.label);
+      const summary = toNonEmptyString(item.summary);
+      const pressureLabel = toNonEmptyString(item.pressure_label);
+      const routeHint = normalizeRoute(item.route_hint, null);
+      const count = Number(item.count);
+
+      if (!label) return null;
+
+      return {
+        label,
+        count: Number.isFinite(count) ? Math.max(0, Math.round(count)) : 0,
+        summary: summary || '',
+        pressure_label: pressureLabel || 'Операционный сигнал',
+        route_hint: routeHint,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 4);
+
+  return normalized.length > 0 ? normalized : fallback;
+}
+
 function extractJsonObject(text) {
   const source = toNonEmptyString(text);
   if (!source) return null;
@@ -149,12 +178,17 @@ function normalizeAssistantResult(raw, fallback, source = 'ai') {
     executive_summary: toNonEmptyString(raw?.executive_summary) || fallback.executive_summary,
     recommended_department: toNonEmptyString(raw?.recommended_department) ?? fallback.recommended_department,
     recommended_route: normalizeRoute(raw?.recommended_route, fallback.recommended_route),
+    department_queue: toNonEmptyString(raw?.department_queue) || fallback.department_queue,
+    control_mode: toNonEmptyString(raw?.control_mode) || fallback.control_mode,
+    sla_target: toNonEmptyString(raw?.sla_target) || fallback.sla_target,
+    escalation_owner: toNonEmptyString(raw?.escalation_owner) || fallback.escalation_owner,
     reasoning: toNonEmptyString(raw?.reasoning) || fallback.reasoning,
     risk_level: normalizeRiskLevel(raw?.risk_level, fallback.risk_level),
     priority_label: toNonEmptyString(raw?.priority_label) || fallback.priority_label,
     confidence_label: normalizeConfidence(raw?.confidence_label, fallback.confidence_label),
     next_actions: normalizeStringArray(raw?.next_actions, fallback.next_actions),
     oversight_flags: normalizeStringArray(raw?.oversight_flags, fallback.oversight_flags),
+    hotspots: normalizeHotspots(raw?.hotspots, fallback.hotspots),
     spotlight_reports: fallback.spotlight_reports,
     source,
   };
@@ -171,12 +205,25 @@ function buildPrompt({ mode, fallback, report, reports, filters }) {
   "executive_summary": "краткая управленческая сводка",
   "recommended_department": "название департамента или null",
   "recommended_route": "government|business|shared|null",
+  "department_queue": "рабочая очередь или контур исполнения",
+  "control_mode": "как акимату вести этот кейс или поток",
+  "sla_target": "целевой SLA/горизонт реакции",
+  "escalation_owner": "кто эскалирует или контролирует",
   "reasoning": "почему ассистент рекомендует это действие",
   "risk_level": "critical|high|medium|low",
   "priority_label": "короткая метка приоритета",
   "confidence_label": "high|medium|low",
   "next_actions": ["действие 1", "действие 2"],
-  "oversight_flags": ["риск 1", "риск 2"]
+  "oversight_flags": ["риск 1", "риск 2"],
+  "hotspots": [
+    {
+      "label": "горячая зона/тип потока",
+      "count": 3,
+      "summary": "краткое описание давления",
+      "pressure_label": "тип давления",
+      "route_hint": "government|business|shared|null"
+    }
+  ]
 }
 
 Режим: ${mode}
@@ -196,7 +243,7 @@ ${JSON.stringify(scopedReports, null, 2)}
 Фильтры:
 ${JSON.stringify(filters ?? {}, null, 2)}
 
-Сделай ответ коротким, управленческим и пригодным для дежурного сотрудника акимата. Не придумывай новые департаменты, которых нет в базе знаний.`;
+Сделай ответ коротким, управленческим и пригодным для дежурного сотрудника акимата. Не придумывай новые департаменты, которых нет в базе знаний. Если режим report_guidance, обязательно верни department_queue, control_mode, sla_target и escalation_owner.`;
 }
 
 router.post('/', async (req, res) => {

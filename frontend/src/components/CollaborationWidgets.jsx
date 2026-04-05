@@ -1,72 +1,30 @@
 import { getPartnerComment, getReportTimeline } from '../lib/reportCollaboration';
 
-const STEP_STYLE = {
-  complete: {
-    dotBg: '#dcfce7',
-    dotColor: '#15803d',
-    border: '#bbf7d0',
-    title: '#166534',
-    caption: '#4d7c0f',
-    line: '#86efac',
-  },
-  current: {
-    dotBg: '#eef2ff',
-    dotColor: '#4338ca',
-    border: '#c7d2fe',
-    title: '#4338ca',
-    caption: '#6366f1',
-    line: '#c7d2fe',
-  },
-  upcoming: {
-    dotBg: '#f8fafc',
-    dotColor: '#94a3b8',
-    border: '#e2e8f0',
-    title: '#64748b',
-    caption: '#94a3b8',
-    line: '#e2e8f0',
-  },
+const STEP_CLS = {
+  complete: { dot: 'bg-green-100 text-green-700 border-green-300', title: 'text-green-800', caption: 'text-green-600', line: 'bg-green-300' },
+  current:  { dot: 'bg-indigo-50 text-indigo-700 border-indigo-300', title: 'text-indigo-700', caption: 'text-indigo-400', line: 'bg-indigo-200' },
+  upcoming: { dot: 'bg-slate-50 text-slate-400 border-slate-200', title: 'text-slate-500', caption: 'text-slate-400', line: 'bg-slate-200' },
 };
 
 export function CollaborationTimeline({ report, title = 'Ход заявки' }) {
   const steps = getReportTimeline(report);
 
   return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: 10 }}>
-        {title}
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))`, gap: 10 }}>
-        {steps.map((step, index) => {
-          const tone = STEP_STYLE[step.state] ?? STEP_STYLE.upcoming;
+    <div className="mb-3.5">
+      <div className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-2.5">{title}</div>
+      <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
+        {steps.map((step, i) => {
+          const t = STEP_CLS[step.state] || STEP_CLS.upcoming;
           return (
-            <div key={step.id} style={{ minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <div style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: '50%',
-                  background: tone.dotBg,
-                  color: tone.dotColor,
-                  border: `1px solid ${tone.border}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 12,
-                  fontWeight: 800,
-                  flexShrink: 0,
-                }}>
-                  {step.state === 'complete' ? '✓' : index + 1}
+            <div key={step.id} className="min-w-0">
+              <div className="flex items-center gap-2 mb-2">
+                <div className={`w-7 h-7 rounded-full border flex items-center justify-center text-xs font-extrabold shrink-0 ${t.dot}`}>
+                  {step.state === 'complete' ? '\u2713' : i + 1}
                 </div>
-                {index < steps.length - 1 && (
-                  <div style={{ height: 2, flex: 1, background: tone.line, borderRadius: 999 }} />
-                )}
+                {i < steps.length - 1 && <div className={`h-0.5 flex-1 rounded-full ${t.line}`} />}
               </div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: tone.title, marginBottom: 4, lineHeight: 1.35 }}>
-                {step.label}
-              </div>
-              <div style={{ fontSize: 11, color: tone.caption, lineHeight: 1.45 }}>
-                {step.caption}
-              </div>
+              <div className={`text-xs font-bold mb-1 leading-tight ${t.title}`}>{step.label}</div>
+              <div className={`text-[11px] leading-snug ${t.caption}`}>{step.caption}</div>
             </div>
           );
         })}
@@ -75,76 +33,34 @@ export function CollaborationTimeline({ report, title = 'Ход заявки' })
   );
 }
 
-export function PartnerCommentBox({
-  report,
-  draft,
-  onDraftChange,
-  onSave,
-  busy = false,
-  placeholder = 'Напишите комментарий для второй стороны...',
-}) {
+export function PartnerCommentBox({ report, draft, onDraftChange, onSave, busy = false, placeholder = 'Напишите комментарий для второй стороны...' }) {
   const comment = getPartnerComment(report);
   const canSave = draft.trim().length > 0;
 
   return (
-    <div style={{ marginTop: 14, borderRadius: 14, border: '1px solid #dbeafe', background: '#f8fbff', padding: 14 }}>
-      <div style={{ fontSize: 11, color: '#2563eb', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: 10 }}>
+    <div className="mt-3.5 rounded-[14px] border border-blue-100 bg-blue-50/30 p-3.5">
+      <div className="text-[11px] text-blue-600 font-bold uppercase tracking-wider mb-2.5">
         Координационный комментарий
       </div>
 
-      <div style={{
-        borderRadius: 12,
-        border: '1px solid #dbeafe',
-        background: '#fff',
-        padding: '12px 14px',
-        minHeight: 76,
-        marginBottom: 10,
-        fontSize: 13,
-        color: comment ? '#334155' : '#94a3b8',
-        lineHeight: 1.6,
-        whiteSpace: 'pre-wrap',
-      }}>
-        {comment || 'Комментарий между акиматом и частным сектором ещё не добавлен.'}
+      <div className={`rounded-xl border border-blue-100 bg-white px-3.5 py-3 min-h-[76px] mb-2.5 text-[13px] leading-relaxed whitespace-pre-wrap ${comment ? 'text-slate-700' : 'text-slate-400'}`}>
+        {comment || 'Комментарий между акиматом и подрядчиком ещё не добавлен.'}
       </div>
 
       <textarea
         rows={3}
         value={draft}
-        onChange={event => onDraftChange(event.target.value)}
+        onChange={e => onDraftChange(e.target.value)}
         placeholder={placeholder}
-        style={{
-          width: '100%',
-          resize: 'vertical',
-          boxSizing: 'border-box',
-          borderRadius: 12,
-          border: '1px solid #bfdbfe',
-          background: '#fff',
-          padding: '10px 12px',
-          fontFamily: 'inherit',
-          fontSize: 13,
-          color: '#0f172a',
-          lineHeight: 1.6,
-          outline: 'none',
-          marginBottom: 10,
-        }}
+        className="w-full resize-y rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 leading-relaxed outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 mb-2.5"
       />
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 12, color: '#64748b' }}>
-          Сообщение увидят обе стороны совместной заявки.
-        </div>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <span className="text-xs text-slate-500">Сообщение увидят обе стороны совместной заявки.</span>
         <button
           onClick={onSave}
           disabled={busy || !canSave}
-          style={{
-            background: canSave ? '#2563eb' : '#94a3b8',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 10,
-            padding: '9px 14px',
-            fontSize: 12,
-            fontWeight: 700,
-          }}
+          className={`px-3.5 py-2 rounded-[10px] text-xs font-bold text-white transition ${canSave ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-400'}`}
         >
           {busy ? 'Сохраняем...' : 'Сохранить комментарий'}
         </button>
