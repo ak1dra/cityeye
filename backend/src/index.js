@@ -78,8 +78,9 @@ app.post('/api/reports', requireAuthenticatedProfile, requireReportCreator, asyn
       { authToken: req.auth.token }
     );
     res.status(201).json(report);
-  } catch {
-    res.status(500).json({ error: 'Failed to create report' });
+  } catch (err) {
+    console.error('POST /api/reports error:', err);
+    res.status(500).json({ error: err.message || 'Failed to create report' });
   }
 });
 

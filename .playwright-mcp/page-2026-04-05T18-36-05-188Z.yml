@@ -1,0 +1,132 @@
+- generic [ref=e3]:
+  - banner [ref=e178]:
+    - generic [ref=e179]: CityEye
+    - navigation [ref=e180]:
+      - button "Карта" [ref=e181] [cursor=pointer]
+      - button "Лента" [ref=e182] [cursor=pointer]
+      - button "Репорт" [ref=e183] [cursor=pointer]
+    - generic [ref=e184]:
+      - generic [ref=e185]: Demo Citizen
+      - button "Выйти" [ref=e186] [cursor=pointer]
+  - main [ref=e187]:
+    - generic [ref=e188]:
+      - generic [ref=e189]:
+        - heading "Photo-first AI triage" [level=1] [ref=e190]
+        - paragraph [ref=e191]: Сначала фото, затем AI собирает досье кейса и готовит маршрут исполнения.
+      - generic [ref=e192]:
+        - generic [ref=e193]: Фото *
+        - img "preview" [ref=e276] [cursor=pointer]
+        - generic [ref=e277]:
+          - button "Заменить" [ref=e278] [cursor=pointer]
+          - button "Удалить" [ref=e279] [cursor=pointer]
+      - generic [ref=e201]:
+        - generic [ref=e202]: Тип проблемы
+        - generic [ref=e203]:
+          - generic [ref=e204] [cursor=pointer]:
+            - img [ref=e205]
+            - generic [ref=e207]: Яма / Дорога
+          - generic [ref=e208] [cursor=pointer]:
+            - img [ref=e209]
+            - generic [ref=e213]: Освещение
+          - generic [ref=e214] [cursor=pointer]:
+            - img [ref=e215]
+            - generic [ref=e217]: Мусор
+          - generic [ref=e218] [cursor=pointer]:
+            - img [ref=e219]
+            - generic [ref=e221]: Вандализм
+          - generic [ref=e222] [cursor=pointer]:
+            - img [ref=e223]
+            - generic [ref=e226]: Парковка
+          - generic [ref=e227] [cursor=pointer]:
+            - img [ref=e228]
+            - generic [ref=e230]: Другое
+      - generic [ref=e231]:
+        - generic [ref=e232]: Адрес
+        - generic [ref=e233]:
+          - img
+          - textbox "ул. Абая 10, Алматы" [ref=e234]: Алматы, улица Айтжана Туркебаева, 93
+        - generic [ref=e235]:
+          - generic [ref=e236]: Отметьте на карте
+          - generic [ref=e240]:
+            - generic:
+              - generic [ref=e245]:
+                - generic [ref=e247]:
+                  - text: © Яндекс
+                  - link "Условия использования" [ref=e249] [cursor=pointer]:
+                    - /url: https://yandex.ru/legal/maps_termsofuse/?lang=ru
+                - link [ref=e251] [cursor=pointer]:
+                  - /url: ""
+              - generic [ref=e253]:
+                - generic "Как добраться" [ref=e280]:
+                  - generic [ref=e258] [cursor=pointer]: Как добраться
+                - link "Создать свою карту" [ref=e281] [cursor=pointer]:
+                  - /url: "https://tech.yandex.ru/maps/mapsapi/?from=api-maps "
+          - generic [ref=e283]:
+            - img [ref=e284]
+            - text: "Место отмечено: Алматы, улица Айтжана Туркебаева, 93"
+      - generic [ref=e267]:
+        - generic [ref=e268]:
+          - generic [ref=e269]: Контекст для AI
+          - button "🎤 Голос (KZ/RU)" [disabled] [ref=e270]
+        - textbox "Коротко опишите проблему или нажмите микрофон для голосового ввода на казахском/русском." [ref=e271]
+        - generic [ref=e272]: "Достаточно фото и одного элемента контекста: тип, адрес или короткое описание."
+      - generic [ref=e273]:
+        - generic [ref=e274]: AI triage обновляет досье кейса
+        - generic [ref=e275]: Система пересчитывает severity, priority, suggested route и action plan.
+      - generic [ref=e286]:
+        - generic [ref=e287]:
+          - generic [ref=e288]:
+            - generic [ref=e289]:
+              - generic [ref=e290]: AI decision timeline
+              - generic [ref=e291]: Пайплайн выполняется в реальном времени
+            - generic [ref=e293]: Live SSE
+          - generic [ref=e294]:
+            - generic [ref=e295]:
+              - generic [ref=e296]:
+                - generic [ref=e297]: ✓
+                - generic [ref=e298]:
+                  - generic [ref=e299]: OCR анализ фото
+                  - generic [ref=e300]: no_ocr
+              - generic [ref=e302]: 3ms
+            - generic [ref=e303]:
+              - generic [ref=e304]:
+                - generic [ref=e306]:
+                  - generic [ref=e307]: 🧠
+                  - generic [ref=e308]:
+                    - generic [ref=e309]: Классификация
+                    - generic [ref=e310]: Qwen определяет тип и severity
+                - generic [ref=e313]: Parallel branch
+              - generic [ref=e314]:
+                - generic [ref=e315]:
+                  - generic [ref=e316]: ✓
+                  - generic [ref=e317]:
+                    - generic [ref=e318]: Векторизация
+                    - generic [ref=e319]: 0d vector
+                - generic [ref=e320]:
+                  - generic [ref=e321]: Parallel branch
+                  - generic [ref=e322]: 20ms
+            - generic [ref=e324]:
+              - generic [ref=e325]: 🔍
+              - generic [ref=e326]:
+                - generic [ref=e327]: Dedup
+                - generic [ref=e328]: Ищем похожие кейсы и соседние точки
+            - generic [ref=e330]:
+              - generic [ref=e331]: →
+              - generic [ref=e332]:
+                - generic [ref=e333]: Маршрутизация
+                - generic [ref=e334]: Определяем owner и контур исполнения
+            - generic [ref=e336]:
+              - generic [ref=e337]: 🎯
+              - generic [ref=e338]:
+                - generic [ref=e339]: Скоринг
+                - generic [ref=e340]: Считаем приоритет и давление на поток
+            - generic [ref=e342]:
+              - generic [ref=e343]: 💡
+              - generic [ref=e344]:
+                - generic [ref=e345]: Explainability
+                - generic [ref=e346]: Собираем обоснование AI решения
+        - generic [ref=e347]:
+          - button "Переанализируем..." [disabled] [ref=e348] [cursor=pointer]
+          - button "Отправить в AI-assisted workflow" [disabled] [ref=e349] [cursor=pointer]:
+            - img [ref=e350]
+            - text: Отправить в AI-assisted workflow

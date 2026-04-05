@@ -1,0 +1,108 @@
+- generic [ref=e3]:
+  - main [ref=e4]:
+    - generic [ref=e9]:
+      - generic:
+        - generic [ref=e14]:
+          - generic [ref=e16]:
+            - text: © Яндекс
+            - link "Условия использования" [ref=e18] [cursor=pointer]:
+              - /url: https://yandex.ru/legal/maps_termsofuse/?lang=ru
+          - link [ref=e20] [cursor=pointer]:
+            - /url: ""
+        - generic [ref=e22]:
+          - generic "Открыть в Яндекс Картах" [ref=e23]:
+            - generic [ref=e27] [cursor=pointer]: Открыть в Яндекс Картах
+          - link "Создать свою карту" [ref=e28] [cursor=pointer]:
+            - /url: "https://tech.yandex.ru/maps/mapsapi/?from=api-maps "
+  - banner [ref=e39]:
+    - generic [ref=e40]: CityEye
+    - navigation [ref=e41]:
+      - button "Карта" [ref=e42] [cursor=pointer]
+      - button "Лента" [ref=e43] [cursor=pointer]
+      - button "Репорт" [ref=e44] [cursor=pointer]
+    - button "Войти в кабинет" [active] [ref=e46] [cursor=pointer]
+  - generic [ref=e50]:
+    - generic [ref=e51]:
+      - generic [ref=e52]:
+        - generic [ref=e53]: Карта Алматы
+        - generic [ref=e54]: 21 обращений на карте
+      - button "Сообщить" [ref=e56] [cursor=pointer]
+    - generic [ref=e57]:
+      - generic [ref=e58]: На карте 9 срочных обращений. Выберите метку, чтобы посмотреть детали, или отправьте новый репорт.
+      - button "Показать heatmap" [ref=e59] [cursor=pointer]
+  - generic [ref=e79]:
+    - generic [ref=e80]:
+      - generic [ref=e81]:
+        - generic [ref=e82]: Вход
+        - generic [ref=e83]:
+          - img [ref=e85]
+          - generic [ref=e88]:
+            - heading "Войти в CityEye" [level=1] [ref=e89]
+            - paragraph [ref=e90]: Сообщить о проблеме и следить за статусом
+      - button "Закрыть" [ref=e92] [cursor=pointer]:
+        - img [ref=e93]
+        - text: Закрыть
+    - generic [ref=e96]:
+      - generic [ref=e97]:
+        - button "Вход" [ref=e98] [cursor=pointer]
+        - button "Регистрация" [ref=e99] [cursor=pointer]
+      - generic [ref=e100]:
+        - button "Гражданин" [ref=e101] [cursor=pointer]:
+          - img [ref=e103]
+          - generic [ref=e106]: Гражданин
+        - button "Подрядчик" [ref=e107] [cursor=pointer]:
+          - img [ref=e109]
+          - generic [ref=e113]: Подрядчик
+        - button "Акимат" [ref=e114] [cursor=pointer]:
+          - img [ref=e116]
+          - generic [ref=e118]: Акимат
+      - generic [ref=e119]:
+        - generic [ref=e120]: Быстрый тест
+        - generic [ref=e121]:
+          - button "Гражданин user@cityeye.kz User2026" [ref=e122] [cursor=pointer]:
+            - generic [ref=e123]:
+              - img [ref=e125]
+              - generic [ref=e128]: Гражданин
+            - generic [ref=e129]:
+              - generic [ref=e130]: user@cityeye.kz
+              - generic [ref=e131]: User2026
+          - button "Подрядчик business@cityeye.kz Business2026" [ref=e132] [cursor=pointer]:
+            - generic [ref=e133]:
+              - img [ref=e135]
+              - generic [ref=e139]: Подрядчик
+            - generic [ref=e140]:
+              - generic [ref=e141]: business@cityeye.kz
+              - generic [ref=e142]: Business2026
+          - button "Акимат gov@cityeye.kz CityEye2026" [ref=e143] [cursor=pointer]:
+            - generic [ref=e144]:
+              - img [ref=e146]
+              - generic [ref=e148]: Акимат
+            - generic [ref=e149]:
+              - generic [ref=e150]: gov@cityeye.kz
+              - generic [ref=e151]: CityEye2026
+      - generic [ref=e152]:
+        - text: "Supabase: Google"
+        - strong [ref=e153]: "off"
+        - text: ", email confirmation"
+        - strong [ref=e154]: "on"
+      - generic [ref=e155]:
+        - button "Google сейчас недоступен" [disabled] [ref=e156]:
+          - img [ref=e157]
+          - text: Google сейчас недоступен
+        - generic [ref=e162]:
+          - generic [ref=e163]: Email
+          - generic [ref=e164]:
+            - generic:
+              - img
+            - textbox "Email" [ref=e165]:
+              - /placeholder: you@cityeye.kz
+        - generic [ref=e166]:
+          - generic [ref=e167]: Пароль
+          - generic [ref=e168]:
+            - generic:
+              - img
+            - textbox "Пароль" [ref=e169]:
+              - /placeholder: Введите пароль
+        - button "Войти" [ref=e170] [cursor=pointer]:
+          - img [ref=e171]
+          - text: Войти

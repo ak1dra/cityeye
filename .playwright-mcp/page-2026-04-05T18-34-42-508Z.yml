@@ -1,0 +1,72 @@
+- generic [ref=e3]:
+  - banner [ref=e178]:
+    - generic [ref=e179]: CityEye
+    - navigation [ref=e180]:
+      - button "Карта" [ref=e181] [cursor=pointer]
+      - button "Лента" [ref=e182] [cursor=pointer]
+      - button "Репорт" [ref=e183] [cursor=pointer]
+    - generic [ref=e184]:
+      - generic [ref=e185]: Demo Citizen
+      - button "Выйти" [ref=e186] [cursor=pointer]
+  - main [ref=e187]:
+    - generic [ref=e188]:
+      - generic [ref=e189]:
+        - heading "Photo-first AI triage" [level=1] [ref=e190]
+        - paragraph [ref=e191]: Сначала фото, затем AI собирает досье кейса и готовит маршрут исполнения.
+      - generic [ref=e192]:
+        - generic [ref=e193]: Фото *
+        - generic [ref=e194] [cursor=pointer]:
+          - img [ref=e196]
+          - generic [ref=e199]: Загрузите фото проблемы
+          - generic [ref=e200]: Фото обязательно для photo-first AI triage · JPG PNG WEBP
+      - generic [ref=e201]:
+        - generic [ref=e202]: Тип проблемы
+        - generic [ref=e203]:
+          - generic [ref=e204] [cursor=pointer]:
+            - img [ref=e205]
+            - generic [ref=e207]: Яма / Дорога
+          - generic [ref=e208] [cursor=pointer]:
+            - img [ref=e209]
+            - generic [ref=e213]: Освещение
+          - generic [ref=e214] [cursor=pointer]:
+            - img [ref=e215]
+            - generic [ref=e217]: Мусор
+          - generic [ref=e218] [cursor=pointer]:
+            - img [ref=e219]
+            - generic [ref=e221]: Вандализм
+          - generic [ref=e222] [cursor=pointer]:
+            - img [ref=e223]
+            - generic [ref=e226]: Парковка
+          - generic [ref=e227] [cursor=pointer]:
+            - img [ref=e228]
+            - generic [ref=e230]: Другое
+      - generic [ref=e231]:
+        - generic [ref=e232]: Адрес
+        - generic [ref=e233]:
+          - img
+          - textbox "ул. Абая 10, Алматы" [ref=e234]
+        - generic [ref=e235]:
+          - generic [ref=e236]: Отметьте на карте
+          - generic [ref=e240]:
+            - generic:
+              - generic [ref=e245]:
+                - generic [ref=e247]:
+                  - text: © Яндекс
+                  - link "Условия использования" [ref=e249] [cursor=pointer]:
+                    - /url: https://yandex.ru/legal/maps_termsofuse/?lang=ru
+                - link [ref=e251] [cursor=pointer]:
+                  - /url: ""
+              - generic [ref=e253]:
+                - generic "Открыть в Яндекс Картах" [ref=e254]:
+                  - generic [ref=e258] [cursor=pointer]: Открыть в Яндекс Картах
+                - link "API Карт" [ref=e259] [cursor=pointer]:
+                  - /url: "https://tech.yandex.ru/maps/mapsapi/?from=api-maps "
+      - generic [ref=e267]:
+        - generic [ref=e268]:
+          - generic [ref=e269]: Контекст для AI
+          - button "🎤 Голос (KZ/RU)" [ref=e270] [cursor=pointer]
+        - textbox "Коротко опишите проблему или нажмите микрофон для голосового ввода на казахском/русском." [ref=e271]
+        - generic [ref=e272]: "Достаточно фото и одного элемента контекста: тип, адрес или короткое описание."
+      - generic [ref=e273]:
+        - generic [ref=e274]: Сначала загрузите фото
+        - generic [ref=e275]: Photo-first сценарий начинается с изображения проблемы.

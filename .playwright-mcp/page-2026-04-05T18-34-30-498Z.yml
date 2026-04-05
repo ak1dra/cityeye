@@ -1,0 +1,34 @@
+- generic [ref=e3]:
+  - main [ref=e4]:
+    - generic [ref=e9]:
+      - generic:
+        - generic [ref=e14]:
+          - generic [ref=e16]:
+            - text: © Яндекс
+            - link "Условия использования" [ref=e18] [cursor=pointer]:
+              - /url: https://yandex.ru/legal/maps_termsofuse/?lang=ru
+          - link [ref=e20] [cursor=pointer]:
+            - /url: ""
+        - generic [ref=e22]:
+          - generic "Открыть в Яндекс Картах" [ref=e23]:
+            - generic [ref=e27] [cursor=pointer]: Открыть в Яндекс Картах
+          - link "Создать свою карту" [ref=e28] [cursor=pointer]:
+            - /url: "https://tech.yandex.ru/maps/mapsapi/?from=api-maps "
+  - banner [ref=e39]:
+    - generic [ref=e40]: CityEye
+    - navigation [ref=e41]:
+      - button "Карта" [ref=e42] [cursor=pointer]
+      - button "Лента" [ref=e43] [cursor=pointer]
+      - button "Репорт" [ref=e44] [cursor=pointer]
+    - generic [ref=e45]:
+      - generic [ref=e175]: Demo Citizen
+      - button "Выйти" [ref=e176] [cursor=pointer]
+  - generic [ref=e50]:
+    - generic [ref=e51]:
+      - generic [ref=e52]:
+        - generic [ref=e53]: Карта Алматы
+        - generic [ref=e54]: 21 обращений на карте
+      - button "Сообщить" [ref=e56] [cursor=pointer]
+    - generic [ref=e57]:
+      - generic [ref=e58]: На карте 9 срочных обращений. Выберите метку, чтобы посмотреть детали, или отправьте новый репорт.
+      - button "Показать heatmap" [ref=e59] [cursor=pointer]
