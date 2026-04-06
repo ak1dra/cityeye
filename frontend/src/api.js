@@ -1,11 +1,5 @@
 import { supabase } from './lib/supabase';
-import {
-  createDemoReport,
-  isDemoUser,
-  mergeReportsWithDemo,
-  readDemoUser,
-  updateDemoReport,
-} from './lib/demoAuth';
+import { readDemoUser } from './lib/demoAuth';
 
 const BASE = '/api';
 
@@ -18,6 +12,70 @@ async function parseApiResponse(res) {
   return res.json();
 }
 
+function normalizeArrayParam(value) {
+  if (Array.isArray(value)) {
+    return value.map(item => String(item).trim()).filter(Boolean);
+  }
+  if (typeof value === 'string' && value.trim()) {
+    return value.split(',').map(item => item.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function buildQueryString(params = {}) {
+  const search = new URLSearchParams();
+
+  const appendMaybeCsv = (key, value) => {
+    const values = normalizeArrayParam(value);
+    if (values.length > 0) search.set(key, values.join(','));
+  };
+
+  appendMaybeCsv('status', params.status);
+  appendMaybeCsv('severity', params.severity);
+  appendMaybeCsv('responsible_role', params.responsible_role);
+
+  if (typeof params.view === 'string' && params.view.trim()) {
+    search.set('view', params.view.trim());
+  }
+  if (typeof params.shared_case === 'boolean') {
+    search.set('shared_case', String(params.shared_case));
+  }
+  if (typeof params.search === 'string' && params.search.trim()) {
+    search.set('search', params.search.trim());
+  }
+  if (Number.isFinite(params.limit)) {
+    search.set('limit', String(params.limit));
+  }
+  if (Number.isFinite(params.offset)) {
+    search.set('offset', String(params.offset));
+  }
+
+  const query = search.toString();
+  return query ? `?${query}` : '';
+}
+
+function normalizePagePayload(payload, fallbackLimit = 120, fallbackOffset = 0) {
+  if (Array.isArray(payload)) {
+    return {
+      items: payload,
+      total: payload.length,
+      limit: fallbackLimit,
+      offset: fallbackOffset,
+      has_more: false,
+      source: 'supabase',
+    };
+  }
+
+  return {
+    items: Array.isArray(payload?.items) ? payload.items : [],
+    total: Number.isFinite(payload?.total) ? payload.total : (Array.isArray(payload?.items) ? payload.items.length : 0),
+    limit: Number.isFinite(payload?.limit) ? payload.limit : fallbackLimit,
+    offset: Number.isFinite(payload?.offset) ? payload.offset : fallbackOffset,
+    has_more: Boolean(payload?.has_more),
+    source: typeof payload?.source === 'string' ? payload.source : 'supabase',
+  };
+}
+
 async function buildAuthHeaders(extraHeaders = {}) {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -25,7 +83,7 @@ async function buildAuthHeaders(extraHeaders = {}) {
 
   return {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(!token && demoUser ? { 'x-cityeye-demo-user': demoUser.email } : {}),
+    ...(!token && demoUser?.email ? { 'x-cityeye-demo-user': demoUser.email } : {}),
     ...extraHeaders,
   };
 }
@@ -132,24 +190,21 @@ export async function getAnalyticsOverview() {
   return parseApiResponse(res);
 }
 
-export async function getReports() {
-  try {
-    const res = await fetch(`${BASE}/reports`);
-    const reports = await parseApiResponse(res);
-    return mergeReportsWithDemo(reports);
-  } catch (error) {
-    const fallback = mergeReportsWithDemo([]);
-    if (fallback.length > 0) return fallback;
-    throw error;
-  }
+export async function getReportsPage(params = {}) {
+  const query = buildQueryString(params);
+  const fallbackLimit = Number.isFinite(params.limit) ? params.limit : 120;
+  const fallbackOffset = Number.isFinite(params.offset) ? params.offset : 0;
+  const res = await fetch(`${BASE}/reports${query}`);
+  const payload = await parseApiResponse(res);
+  return normalizePagePayload(payload, fallbackLimit, fallbackOffset);
+}
+
+export async function getReports(params = {}) {
+  const page = await getReportsPage(params);
+  return page.items;
 }
 
 export async function createReport(payload) {
-  const demoUser = readDemoUser();
-  if (isDemoUser(demoUser)) {
-    return createDemoReport(payload, demoUser);
-  }
-
   const res = await fetch(`${BASE}/reports`, {
     method: 'POST',
     headers: await buildAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -159,16 +214,6 @@ export async function createReport(payload) {
 }
 
 export async function updateReport(id, fields) {
-  const demoUser = readDemoUser();
-  if (isDemoUser(demoUser)) {
-    const reports = await getReports();
-    const existing = reports.find(report => String(report.id) === String(id));
-    if (!existing) {
-      throw new Error('Report not found');
-    }
-    return updateDemoReport(existing, fields);
-  }
-
   const res = await fetch(`${BASE}/reports/${id}`, {
     method: 'PATCH',
     headers: await buildAuthHeaders({ 'Content-Type': 'application/json' }),

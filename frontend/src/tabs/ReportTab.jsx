@@ -7,6 +7,7 @@ import { buildCollaborationFields } from '../lib/reportCollaboration';
 import { VoiceInput } from '../components/VoiceInput';
 
 const MIN_CONTEXT_COMMENT = 8;
+const MAX_ANALYZE_IMAGE_BYTES = 1_500_000;
 
 const TYPES = [
   {
@@ -80,14 +81,28 @@ const PIN_SVG = encodeURIComponent(`
   </svg>
 `);
 
+function PipelineIcon({ name, size = 14, color = 'currentColor' }) {
+  const props = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: color, strokeWidth: '2', strokeLinecap: 'round', strokeLinejoin: 'round' };
+  const paths = {
+    camera: <><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></>,
+    brain: <><path d="M12 2a4 4 0 0 0-4 4v1a4 4 0 0 0-4 4 4 4 0 0 0 3 3.87V20a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-5.13A4 4 0 0 0 20 11a4 4 0 0 0-4-4V6a4 4 0 0 0-4-4z"/></>,
+    link: <><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></>,
+    search: <><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>,
+    route: <><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7H6a3.5 3.5 0 0 1 0-7h12"/><circle cx="18" cy="5" r="3"/></>,
+    target: <><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></>,
+    lightbulb: <><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></>,
+  };
+  return <svg {...props}>{paths[name]}</svg>;
+}
+
 const PIPELINE_STEP_META = {
-  input_ocr: { icon: '\uD83D\uDCF7', label: 'OCR анализ фото', sub: 'Извлекаем визуальный контекст' },
-  classify: { icon: '\uD83E\uDDE0', label: 'Классификация', sub: 'Qwen определяет тип и severity' },
-  embed: { icon: '\uD83D\uDD17', label: 'Векторизация', sub: 'Собираем семантический вектор кейса' },
-  dedup: { icon: '\uD83D\uDD0D', label: 'Dedup', sub: 'Ищем похожие кейсы и соседние точки' },
-  route: { icon: '\u2192', label: 'Маршрутизация', sub: 'Определяем owner и контур исполнения' },
-  score: { icon: '\uD83C\uDFAF', label: 'Скоринг', sub: 'Считаем приоритет и давление на поток' },
-  explain: { icon: '\uD83D\uDCA1', label: 'Explainability', sub: 'Собираем обоснование AI решения' },
+  input_ocr: { icon: 'camera', label: 'OCR анализ фото', sub: 'Извлекаем визуальный контекст' },
+  classify: { icon: 'brain', label: 'Классификация', sub: 'Qwen определяет тип и severity' },
+  embed: { icon: 'link', label: 'Векторизация', sub: 'Собираем семантический вектор кейса' },
+  dedup: { icon: 'search', label: 'Dedup', sub: 'Ищем похожие кейсы и соседние точки' },
+  route: { icon: 'route', label: 'Маршрутизация', sub: 'Определяем owner и контур исполнения' },
+  score: { icon: 'target', label: 'Скоринг', sub: 'Считаем приоритет и давление на поток' },
+  explain: { icon: 'lightbulb', label: 'Explainability', sub: 'Собираем обоснование AI решения' },
 };
 
 const PIPELINE_ORDER = ['input_ocr', 'classify', 'embed', 'dedup', 'route', 'score', 'explain'];
@@ -170,7 +185,9 @@ function PipelineStepCard({ step, compact = false }) {
             flexShrink: 0,
           }}
         >
-          {isDone ? '\u2713' : meta.icon}
+          {isDone
+            ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#15803d" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+            : <PipelineIcon name={meta.icon} size={14} color={palette.title} />}
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: palette.title }}>{meta.label}</div>
@@ -282,16 +299,84 @@ const pipelineMetaBadgeStyle = {
   background: 'rgba(255,255,255,0.74)',
 };
 
-function buildContextSignature({ photoFile, selectedType, address, comment, reporterRole }) {
+function buildContextSignature({
+  photoFile,
+  selectedType,
+  address,
+  comment,
+  reporterRole,
+  photoReady,
+  lat,
+  lng,
+}) {
   if (!photoFile) return '';
 
   return JSON.stringify({
     photo: `${photoFile.name}:${photoFile.size}:${photoFile.lastModified}`,
+    photoReady: Boolean(photoReady),
     selectedType,
     address: address.trim(),
     comment: comment.trim(),
     reporterRole,
+    lat: lat ?? null,
+    lng: lng ?? null,
   });
+}
+
+function buildPhotoToken(file) {
+  if (!file) return '';
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function shouldFallbackToStandardAnalyze(error) {
+  const message = String(error?.message || '');
+  return [
+    'STREAM_UNAVAILABLE',
+    'Failed to fetch',
+    'Load failed',
+    'NetworkError when attempting to fetch resource.',
+    'Streaming completed without final result',
+  ].includes(message);
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = loadEvent => resolve(loadEvent.target?.result || null);
+    reader.onerror = () => reject(new Error('Не удалось прочитать изображение.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function buildAnalyzePreview(file) {
+  const rawDataUrl = await readFileAsDataUrl(file);
+  if (!rawDataUrl || typeof window === 'undefined') return rawDataUrl;
+
+  const image = await new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Не удалось подготовить изображение для AI.'));
+    img.src = rawDataUrl;
+  }).catch(() => null);
+
+  if (!image) return rawDataUrl;
+
+  const maxSide = 1600;
+  const largestSide = Math.max(image.width, image.height);
+  const needsResize = largestSide > maxSide;
+  const needsCompression = file.size > MAX_ANALYZE_IMAGE_BYTES;
+  if (!largestSide || (!needsResize && !needsCompression)) return rawDataUrl;
+
+  const scale = needsResize ? maxSide / largestSide : 1;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return rawDataUrl;
+
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', needsCompression ? 0.8 : 0.86);
 }
 
 export default function ReportTab({ onNewReport, user, onRequireAuth }) {
@@ -301,7 +386,6 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
   const [location, setLocation] = useState(null);
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
-  const [photoHover, setPhotoHover] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -319,15 +403,27 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
   const placemarkRef = useRef(null);
   const pendingAnalyzeSignature = useRef('');
   const analyzeAbortRef = useRef(null);
+  const previewTokenRef = useRef('');
 
   const reporterRole = user?.role || 'citizen';
   const isBusinessAuthor = reporterRole === 'business';
   const hasPhoto = Boolean(photoFile);
+  const hasAnalyzablePhoto = Boolean(photoFile && photoPreview);
+  const isPreparingPhoto = hasPhoto && !photoPreview;
   const hasContext = Boolean(selectedType || address.trim() || comment.trim().length >= MIN_CONTEXT_COMMENT);
-  const contextSignature = buildContextSignature({ photoFile, selectedType, address, comment, reporterRole });
+  const contextSignature = buildContextSignature({
+    photoFile,
+    selectedType,
+    address,
+    comment,
+    reporterRole,
+    photoReady: hasAnalyzablePhoto,
+    lat: location?.lat,
+    lng: location?.lng,
+  });
   const isResultFresh = Boolean(result) && analyzedSignature === contextSignature;
   const isResultStale = Boolean(result) && Boolean(analyzedSignature) && analyzedSignature !== contextSignature;
-  const canManualAnalyze = hasPhoto && hasContext && !loading;
+  const canManualAnalyze = hasAnalyzablePhoto && hasContext && !loading;
   const successDossier = result ? getAIDossier(result) : null;
 
   useEffect(() => {
@@ -380,6 +476,8 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
     };
   }, []);
 
+  useEffect(() => () => analyzeAbortRef.current?.abort?.(), []);
+
   function resetPipelineTrace() {
     setPipelineSteps(createInitialPipelineState());
     setPipelineLatency(null);
@@ -390,6 +488,11 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
   async function runAnalyze(signature = contextSignature, resetOutput = false) {
     if (!photoFile) {
       setError('Для AI triage сначала загрузите фото.');
+      return;
+    }
+
+    if (!photoPreview) {
+      setError('Подождите, пока изображение подготовится для AI-анализа.');
       return;
     }
 
@@ -415,6 +518,7 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
         comment: comment.trim(),
         reporter_role: reporterRole,
         image_present: true,
+        image_url: photoPreview,
         lat: location?.lat ?? null,
         lng: location?.lng ?? null,
       };
@@ -442,9 +546,7 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
           return;
         }
 
-        const shouldFallback =
-          streamError?.message === 'STREAM_UNAVAILABLE'
-          || streamError?.message === 'Failed to fetch';
+        const shouldFallback = shouldFallbackToStandardAnalyze(streamError);
 
         if (!shouldFallback) {
           throw streamError;
@@ -479,7 +581,7 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
   }
 
   useEffect(() => {
-    if (!hasPhoto || !hasContext || saving || submitted || loading) return;
+    if (!hasAnalyzablePhoto || !hasContext || saving || submitted || loading) return;
     if (!contextSignature || analyzedSignature === contextSignature) return;
 
     const timeout = setTimeout(() => {
@@ -487,7 +589,7 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
     }, isResultStale ? 350 : 700);
 
     return () => clearTimeout(timeout);
-  }, [hasPhoto, hasContext, saving, submitted, loading, contextSignature, analyzedSignature, isResultStale]);
+  }, [hasAnalyzablePhoto, hasContext, saving, submitted, loading, contextSignature, analyzedSignature, isResultStale]);
 
   function resetAnalyzeState() {
     analyzeAbortRef.current?.abort?.();
@@ -498,6 +600,7 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
   }
 
   function removePhoto() {
+    previewTokenRef.current = '';
     setPhotoFile(null);
     setPhotoPreview(null);
     resetAnalyzeState();
@@ -508,18 +611,28 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
     }
   }
 
-  function handlePhotoChange(event) {
+  async function handlePhotoChange(event) {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    const nextToken = buildPhotoToken(file);
+    previewTokenRef.current = nextToken;
     setPhotoFile(file);
+    setPhotoPreview(null);
     setSubmitted(false);
     setError(null);
     resetAnalyzeState();
 
-    const reader = new FileReader();
-    reader.onload = loadEvent => setPhotoPreview(loadEvent.target?.result || null);
-    reader.readAsDataURL(file);
+    try {
+      const nextPreview = await buildAnalyzePreview(file);
+      if (previewTokenRef.current === nextToken) {
+        setPhotoPreview(nextPreview);
+      }
+    } catch (previewError) {
+      if (previewTokenRef.current === nextToken) {
+        setError(previewError.message || 'Не удалось подготовить фото для AI.');
+      }
+    }
   }
 
   async function handleSubmit() {
@@ -530,12 +643,12 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
     }
 
     if (!photoFile) {
-      setError('Добавьте фото, чтобы отправить кейс в AI-assisted triage flow.');
+      setError('Добавьте фото для отправки обращения.');
       return;
     }
 
     if (!isResultFresh) {
-      setError('Подождите завершения AI triage или запустите переанализ, если вы изменили контекст кейса.');
+      setError('Подождите завершения анализа или запустите повторный анализ.');
       return;
     }
 
@@ -617,24 +730,24 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
             width: 72,
             height: 72,
             borderRadius: '50%',
-            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+            background: 'linear-gradient(135deg, #0f172a, #334155)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             margin: '0 auto 20px',
-            boxShadow: '0 8px 24px rgba(99,102,241,0.35)',
+            boxShadow: '0 8px 24px rgba(15,23,42,0.25)',
           }}>
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round">
               <polyline points="20 6 9 17 4 12"/>
             </svg>
           </div>
           <h2 style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 700, color: '#0f172a' }}>
-            Кейс отправлен в AI-triage
+            Обращение отправлено
           </h2>
           <p style={{ margin: '0 0 20px', fontSize: 14, color: '#64748b', lineHeight: 1.7 }}>
             {isBusinessAuthor
-              ? 'AI оформил кейс как заявку подрядчика и подготовил его для совместной работы с акиматом.'
-              : 'AI сформировал досье кейса и отправил его в городской контур исполнения.'}
+              ? 'Заявка подрядчика оформлена и направлена на совместную обработку с акиматом.'
+              : 'Обращение проанализировано и направлено в систему исполнения.'}
           </p>
 
           {successDossier?.hasTriage && (
@@ -664,7 +777,7 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
             </div>
           )}
 
-          <button onClick={reset} style={btnPrimary}>Отправить ещё один</button>
+          <button onClick={reset} style={btnPrimary}>Подать ещё одно обращение</button>
         </div>
       </div>
     );
@@ -703,17 +816,16 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
         </SectionTitle>
 
         <div
+          className={`report-photo-dropzone${photoPreview ? ' is-ready' : ''}`}
           onClick={() => fileInputRef.current?.click()}
-          onMouseEnter={() => setPhotoHover(true)}
-          onMouseLeave={() => setPhotoHover(false)}
           style={{
-            border: `2px dashed ${photoHover ? '#6366f1' : '#dbe3ef'}`,
+            border: '2px dashed #dbe3ef',
             borderRadius: 16,
             padding: photoPreview ? 0 : 32,
             textAlign: 'center',
             cursor: 'pointer',
             overflow: 'hidden',
-            background: photoPreview ? 'none' : photoHover ? '#fafbff' : '#fafafa',
+            background: photoPreview ? 'none' : '#fafafa',
             transition: 'all 0.2s',
           }}
         >
@@ -772,24 +884,24 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
               onClick={() => setSelectedType(type.id)}
               style={{
                 padding: '16px 12px',
-                border: selectedType === type.id ? '2px solid #6366f1' : '1.5px solid #e5e7eb',
+                border: selectedType === type.id ? '2px solid #0f172a' : '1.5px solid #e2e8e0',
                 borderRadius: 12,
                 textAlign: 'center',
                 cursor: 'pointer',
-                background: selectedType === type.id ? '#eef2ff' : '#fff',
+                background: selectedType === type.id ? '#f1f5f9' : 'rgba(255,255,255,0.85)',
                 transition: 'all .2s',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 gap: 8,
-                color: selectedType === type.id ? '#6366f1' : '#9ca3af',
+                color: selectedType === type.id ? '#0f172a' : '#9ca3af',
               }}
             >
               {type.icon}
               <span style={{
                 fontSize: 12,
                 fontWeight: 500,
-                color: selectedType === type.id ? '#6366f1' : '#6b7280',
+                color: selectedType === type.id ? '#0f172a' : '#6b7280',
               }}>
                 {type.label}
               </span>
@@ -864,6 +976,8 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
         tone={
           !hasPhoto
             ? 'neutral'
+            : isPreparingPhoto
+              ? 'info'
             : loading
               ? 'info'
               : isResultFresh
@@ -874,25 +988,29 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
         }
         title={
           !hasPhoto
-            ? 'Сначала загрузите фото'
+            ? 'Загрузите фото'
+            : isPreparingPhoto
+              ? 'Подготовка изображения'
             : loading
-              ? 'AI triage обновляет досье кейса'
+              ? 'Анализ обращения'
               : isResultFresh
-                ? 'AI-досье готово к отправке'
+                ? 'Готово к отправке'
                 : hasContext
-                  ? 'AI triage запускается автоматически'
-                  : 'Добавьте контекст для AI'
+                  ? 'Анализ запускается автоматически'
+                  : 'Заполните детали обращения'
         }
         text={
           !hasPhoto
-            ? 'Photo-first сценарий начинается с изображения проблемы.'
+            ? 'Начните с фотографии проблемы — это ускорит обработку обращения.'
+            : isPreparingPhoto
+              ? 'Подготавливаем изображение для анализа.'
             : loading
-              ? 'Система пересчитывает severity, priority, suggested route и action plan.'
+              ? 'Система определяет категорию, приоритет и маршрут исполнения.'
               : isResultFresh
-                ? 'Кейс получил AI severity, маршрут исполнения и план действий.'
+                ? 'Обращение проанализировано. Определены приоритет, маршрут и план действий.'
                 : hasContext
-                  ? 'Через мгновение AI соберёт досье и подготовит кейс к отправке.'
-                  : 'Выберите тип, укажите адрес или добавьте короткое описание, чтобы запустить triage.'
+                  ? 'Через мгновение система подготовит обращение к отправке.'
+                  : 'Укажите тип проблемы, адрес или добавьте описание.'
         }
       />
 
@@ -947,13 +1065,13 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
               }}
             >
               {saving ? (
-                <><div style={spinnerStyle} />Отправляем кейс...</>
+                <><div style={spinnerStyle} />Отправляем обращение...</>
               ) : (
                 <>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                     <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
                   </svg>
-                  Отправить в AI-assisted workflow
+                  Отправить обращение
                 </>
               )}
             </button>
@@ -961,7 +1079,7 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
 
           {isResultStale && (
             <div style={{ marginTop: 12, fontSize: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 12px' }}>
-              Контекст кейса изменился. Дождитесь обновления AI triage перед отправкой.
+              Данные обращения изменились. Дождитесь завершения повторного анализа.
             </div>
           )}
         </div>
@@ -994,9 +1112,13 @@ export default function ReportTab({ onNewReport, user, onRequireAuth }) {
           0% { transform: translateX(-100%); }
           100% { transform: translateX(100%); }
         }
+        .report-photo-dropzone:not(.is-ready):hover {
+          border-color: #94a3b8 !important;
+          background: #f8f9f6 !important;
+        }
         input:focus, textarea:focus {
-          border-color: #6366f1 !important;
-          box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+          border-color: #94a3b8 !important;
+          box-shadow: 0 0 0 3px rgba(15,23,42,0.06);
           outline: none;
         }
       `}</style>
@@ -1057,10 +1179,12 @@ const pageStyle = {
 };
 
 const cardStyle = {
-  background: '#fff',
-  border: '1px solid #eee',
+  background: 'rgba(255,255,255,0.85)',
+  border: '1px solid #e2e8e0',
   borderRadius: 16,
   padding: 24,
+  backdropFilter: 'blur(12px)',
+  WebkitBackdropFilter: 'blur(12px)',
 };
 
 const inputStyle = {
@@ -1093,7 +1217,7 @@ const textareaStyle = {
 };
 
 const btnPrimary = {
-  background: '#6366f1',
+  background: '#0f172a',
   color: '#fff',
   border: 'none',
   borderRadius: 10,
@@ -1101,7 +1225,7 @@ const btnPrimary = {
   fontSize: 14,
   fontWeight: 700,
   cursor: 'pointer',
-  boxShadow: '0 2px 10px rgba(99,102,241,0.3)',
+  boxShadow: '0 10px 24px rgba(15,23,42,0.12)',
   transition: 'opacity 0.15s',
 };
 
@@ -1133,16 +1257,6 @@ const spinnerStyle = {
   height: 14,
   border: '2px solid rgba(255,255,255,0.3)',
   borderTopColor: '#fff',
-  borderRadius: '50%',
-  animation: 'spin 0.7s linear infinite',
-  flexShrink: 0,
-};
-
-const spinnerBlueStyle = {
-  width: 16,
-  height: 16,
-  border: '2px solid rgba(37,99,235,0.2)',
-  borderTopColor: '#2563eb',
   borderRadius: '50%',
   animation: 'spin 0.7s linear infinite',
   flexShrink: 0,

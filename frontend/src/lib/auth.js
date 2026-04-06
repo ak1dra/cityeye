@@ -28,53 +28,58 @@ function getUserMetadataAvatar(authUser) {
   );
 }
 
+function deriveInitials(value, fallback = 'CE') {
+  const source = toNonEmptyString(value);
+  if (!source) return fallback;
+
+  const initials = source
+    .split(/\s+/)
+    .map(part => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
+  return initials || fallback;
+}
+
 function buildProfilePayload(authUser, { preferredRole = 'citizen', governmentAccess = null } = {}) {
   const metadata = authUser?.user_metadata ?? {};
   const email = toNonEmptyString(authUser?.email)?.toLowerCase() ?? null;
-  const fullName = governmentAccess?.full_name || getUserMetadataName(authUser);
-  const avatarUrl = getUserMetadataAvatar(authUser);
+  const fullName = governmentAccess?.name || governmentAccess?.full_name || getUserMetadataName(authUser);
+  const avatarValue = getUserMetadataAvatar(authUser) || deriveInitials(fullName);
 
   if (preferredRole === 'government') {
     return {
       id: authUser.id,
       email,
+      name: fullName,
       role: 'government',
-      status: 'active',
-      full_name: fullName,
-      avatar_url: avatarUrl,
-      organization_name: null,
-      position: governmentAccess?.position ?? toNonEmptyString(metadata.position),
-      district: governmentAccess?.district ?? toNonEmptyString(metadata.district),
+      avatar: avatarValue,
     };
   }
 
   if (preferredRole === 'business') {
+    const businessName =
+      toNonEmptyString(metadata.organization_name)
+      || toNonEmptyString(metadata.company_name)
+      || fullName;
+
     return {
       id: authUser.id,
       email,
+      name: businessName,
       role: 'business',
-      status: 'pending_approval',
-      full_name: toNonEmptyString(metadata.contact_person) || fullName,
-      avatar_url: avatarUrl,
-      organization_name:
-        toNonEmptyString(metadata.organization_name)
-        || toNonEmptyString(metadata.company_name)
-        || 'Business account',
-      position: toNonEmptyString(metadata.position) || 'Управляющая компания',
-      district: toNonEmptyString(metadata.district),
+      avatar: avatarValue,
     };
   }
 
   return {
     id: authUser.id,
     email,
+    name: fullName,
     role: 'citizen',
-    status: 'active',
-    full_name: fullName,
-    avatar_url: avatarUrl,
-    organization_name: null,
-    position: null,
-    district: toNonEmptyString(metadata.district),
+    avatar: avatarValue,
   };
 }
 
@@ -96,37 +101,49 @@ export async function readProfile(userId) {
   return data ?? null;
 }
 
-export async function checkGovernmentAllowlist(email) {
-  if (!email) return null;
+export async function readProfileByEmail(email) {
+  const normalizedEmail = toNonEmptyString(email)?.toLowerCase();
+  if (!normalizedEmail) return null;
 
-  const { data, error } = await supabase.rpc('check_gov_allowlist', {
-    candidate_email: email.toLowerCase(),
-  });
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('email', normalizedEmail)
+    .maybeSingle();
 
   if (error) throw error;
-
-  if (Array.isArray(data)) return data[0] ?? null;
   return data ?? null;
+}
+
+export async function checkGovernmentAllowlist(email) {
+  const profile = await readProfileByEmail(email);
+  return profile?.role === 'government' ? profile : null;
 }
 
 export function mapProfileToAppUser(profile) {
   if (!profile) return null;
 
+  const role = profile.role || 'citizen';
+  const displayName = profile.name || profile.full_name || profile.organization_name || 'Пользователь';
+
   const baseUser = {
     id: profile.id,
     email: profile.email,
-    role: profile.role,
-    status: profile.status,
-    full_name: profile.full_name,
-    organization_name: profile.organization_name,
-    position: profile.position,
-    district: profile.district,
-    avatar_url: profile.avatar_url,
-    avatar: profile.avatar_url,
+    role,
+    status: profile.status || 'active',
+    full_name: profile.full_name || profile.name || displayName,
+    organization_name: profile.organization_name || (role === 'business' ? displayName : null),
+    position: profile.position || null,
+    district: profile.district || null,
+    avatar_url: profile.avatar_url || null,
+    avatar: profile.avatar_url || profile.avatar || null,
     name:
-      profile.role === 'business'
-        ? profile.organization_name || profile.full_name || 'Подрядчик'
-        : profile.full_name || 'Пользователь',
+      role === 'business'
+        ? profile.organization_name || profile.name || profile.full_name || 'Подрядчик'
+        : displayName,
+    initials: typeof profile.avatar === 'string' && profile.avatar.length <= 4
+      ? profile.avatar
+      : deriveInitials(displayName),
   };
 
   return normalizeManagedUser(baseUser);

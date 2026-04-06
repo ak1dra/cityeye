@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Building2,
+  KeyRound,
   Landmark,
   LoaderCircle,
   Mail,
@@ -10,31 +11,26 @@ import {
   X,
 } from 'lucide-react';
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from './lib/supabase';
-import { DEMO_ACCOUNTS, authenticateDemoUser } from './lib/demoAuth';
+import { buildDemoUser, DEMO_PRESETS } from './lib/demoAuth';
 
 const AUTH_TARGET_STORAGE_KEY = 'cityeye_auth_target';
-const DEMO_PRESETS = {
-  citizen: { email: 'user@cityeye.kz', password: 'User2026' },
-  business: { email: 'business@cityeye.kz', password: 'Business2026' },
-  government: { email: 'gov@cityeye.kz', password: 'CityEye2026' },
-};
 
 const ROLE_META = {
   citizen: {
     label: 'Гражданин',
-    subtitle: 'Сообщить о проблеме и следить за статусом',
+    subtitle: 'Подать обращение и отслеживать статус',
     icon: UserRound,
     accent: 'bg-sky-50 text-sky-700 border-sky-200',
   },
   business: {
     label: 'Подрядчик',
-    subtitle: 'ТОО и подрядчики получают рабочие задания от акимата',
+    subtitle: 'Получение и выполнение рабочих заданий от акимата',
     icon: Building2,
     accent: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   },
   government: {
     label: 'Акимат',
-    subtitle: 'Отдельный gov-flow для сотрудников',
+    subtitle: 'Панель управления городской инфраструктурой',
     icon: Landmark,
     accent: 'bg-violet-50 text-violet-700 border-violet-200',
   },
@@ -65,8 +61,8 @@ function RoleSwitch({ role, onChange, onGov }) {
             onClick={() => onChange(currentRole)}
             className={`rounded-2xl border px-3 py-2.5 text-left transition ${
               role === currentRole
-                ? 'border-slate-900 bg-slate-900 text-white shadow-matte-lg'
-                : 'border-white/80 bg-white/70 text-slate-700 shadow-matte hover:bg-white'
+                ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
             }`}
           >
             <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl ${role === currentRole ? 'bg-white/10' : meta.accent}`}>
@@ -80,7 +76,7 @@ function RoleSwitch({ role, onChange, onGov }) {
       <button
         type="button"
         onClick={onGov}
-        className="rounded-2xl border border-white/80 bg-white/70 px-3 py-2.5 text-left text-slate-700 shadow-matte transition hover:bg-white"
+        className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-left text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
       >
         <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl ${ROLE_META.government.accent}`}>
           <Landmark size={16} />
@@ -107,33 +103,31 @@ function Field({ label, icon: Icon, type = 'text', value, onChange, placeholder,
           onChange={onChange}
           placeholder={placeholder}
           autoComplete={autoComplete}
-          className="h-12 w-full rounded-2xl border border-white/80 bg-white/75 pl-10 pr-4 text-sm text-slate-900 shadow-matte outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
+          className="h-12 w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
         />
       </div>
     </label>
   );
 }
 
-function DemoCard({ role, onPick }) {
-  const meta = ROLE_META[role];
-  const creds = DEMO_PRESETS[role];
+function DemoPresetButton({ preset, onClick }) {
+  const meta = ROLE_META[preset.role];
   const Icon = meta.icon;
 
   return (
     <button
       type="button"
-      onClick={() => onPick(role)}
-      className="rounded-2xl border border-white/80 bg-white/72 p-3 text-left shadow-matte transition hover:bg-white"
+      onClick={onClick}
+      className="rounded-2xl border border-slate-200 bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-sm"
     >
-      <div className="flex items-center gap-2">
-        <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl ${meta.accent}`}>
-          <Icon size={15} />
+      <div className="flex items-center gap-3">
+        <span className={`inline-flex h-9 w-9 items-center justify-center rounded-xl border ${meta.accent}`}>
+          <Icon size={16} />
         </span>
-        <div className="text-sm font-semibold text-slate-900">{meta.label}</div>
-      </div>
-      <div className="mt-3 text-xs leading-5 text-slate-500">
-        <div>{creds.email}</div>
-        <div>{creds.password}</div>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-slate-900">{preset.label}</div>
+          <div className="truncate text-xs text-slate-500">{preset.email}</div>
+        </div>
       </div>
     </button>
   );
@@ -154,15 +148,23 @@ function PendingApprovalCard({ user, onLogout, onClose }) {
         </p>
       </div>
 
-      <div className="rounded-2xl border border-white/80 bg-white/70 p-4 text-sm leading-6 text-slate-700">
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">
         В текущем проекте contractor-профили проходят через <strong>pending_approval</strong>. Пока можно вернуться к карте или выйти из сессии.
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <button type="button" onClick={onClose} className="glass-button-primary px-5 py-3">
+        <button
+          type="button"
+          onClick={onClose}
+          className="inline-flex h-11 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-slate-800"
+        >
           Вернуться
         </button>
-        <button type="button" onClick={onLogout} className="glass-button-secondary px-5 py-3">
+        <button
+          type="button"
+          onClick={onLogout}
+          className="inline-flex h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+        >
           Выйти
         </button>
       </div>
@@ -232,6 +234,10 @@ export default function AuthPage({
   const activeRole = view === 'gov' ? 'government' : selectedRole;
   const activeMeta = useMemo(() => ROLE_META[activeRole], [activeRole]);
   const ActiveIcon = activeMeta.icon;
+  const demoEmailSet = useMemo(
+    () => new Set(Object.values(DEMO_PRESETS).map(preset => preset.email.toLowerCase())),
+    []
+  );
 
   function writeAuthTarget(target) {
     if (typeof window === 'undefined') return;
@@ -242,37 +248,17 @@ export default function AuthPage({
     window.sessionStorage.setItem(AUTH_TARGET_STORAGE_KEY, target);
   }
 
-  function setDemoCredentials(role) {
-    const demo = DEMO_PRESETS[role];
-    setSelectedRole(role === 'government' ? 'citizen' : role);
-    setEmail(demo.email);
-    setPassword(demo.password);
-    setError('');
-    setNotice(
-      role === 'government'
-        ? 'Подставлены demo-реквизиты для gov-flow. Если вход не проходит, этот аккаунт ещё не создан в Supabase Auth.'
-        : 'Подставлены demo-реквизиты. Если вход не проходит, demo-аккаунт не создан в текущем Supabase Auth-проекте.'
-    );
-
-    if (role === 'government') {
-      onViewChange('gov');
-    } else {
-      onRoleChange?.(role);
-      onViewChange('sign-in');
-    }
-  }
-
   function mapKnownAuthError(authError, role) {
     const message = authError?.message || 'Не удалось выполнить вход.';
     const normalized = message.toLowerCase();
-    const isDemoEmail = Object.keys(DEMO_ACCOUNTS).includes(email.trim().toLowerCase());
-
-    if (normalized.includes('invalid login credentials') && isDemoEmail) {
-      return 'Demo-аккаунт не найден в текущем Supabase Auth. Его нужно создать и подтвердить отдельно.';
-    }
+    const normalizedEmail = email.trim().toLowerCase();
 
     if (normalized.includes('email not confirmed')) {
       return 'Email ещё не подтверждён. Завершите подтверждение в письме и войдите снова.';
+    }
+
+    if (normalized.includes('invalid login credentials') && demoEmailSet.has(normalizedEmail)) {
+      return 'Для demo-аккаунтов ниже включён быстрый вход. Эти профили есть в roles/profiles, но не заведены как обычные пароли Supabase Auth.';
     }
 
     if (role === 'government' && normalized.includes('invalid login credentials')) {
@@ -308,6 +294,12 @@ export default function AuthPage({
     }
   }
 
+  function handleDemoAccess(role) {
+    const demoUser = buildDemoUser(role);
+    if (!demoUser) return;
+    onDemoLogin?.(demoUser, role === 'government' ? 'gov' : role === 'business' ? 'business' : 'map');
+  }
+
   async function handleCitizenOrBusinessSubmit(event) {
     event.preventDefault();
     setSubmitting(true);
@@ -316,20 +308,6 @@ export default function AuthPage({
 
     try {
       if (formMode === 'sign-in') {
-        const demoUser = authenticateDemoUser(email, password);
-        if (demoUser) {
-          onDemoLogin?.(
-            demoUser,
-            demoUser.role === 'business'
-              ? 'business'
-              : demoUser.role === 'government'
-                ? 'gov'
-                : 'map'
-          );
-          setNotice('Выполняем demo-вход…');
-          return;
-        }
-
         writeAuthTarget(selectedRole === 'business' ? 'business' : 'map');
         const { error: authError } = await supabase.auth.signInWithPassword({
           email: email.trim().toLowerCase(),
@@ -390,13 +368,6 @@ export default function AuthPage({
     setNotice('');
 
     try {
-      const demoUser = authenticateDemoUser(email, password);
-      if (demoUser?.role === 'government') {
-        onDemoLogin?.(demoUser, 'gov');
-        setNotice('Выполняем demo-вход акимата…');
-        return;
-      }
-
       writeAuthTarget('gov');
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
@@ -414,11 +385,11 @@ export default function AuthPage({
   }
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/28 p-4 backdrop-blur-md">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
       <div className="absolute inset-0" onClick={onBack} />
 
       <div className="relative z-[1] w-full max-w-[520px]">
-        <div className="glass-panel-matte max-h-[calc(100vh-2rem)] overflow-y-auto rounded-[28px] p-4 shadow-matte-xl sm:p-5">
+        <div className="max-h-[calc(100vh-2rem)] overflow-y-auto rounded-[28px] border border-slate-200/90 bg-white p-4 shadow-[0_28px_90px_rgba(15,23,42,0.22)] sm:p-5">
           <div className="mb-5 flex items-start justify-between gap-4">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -443,12 +414,20 @@ export default function AuthPage({
 
             <div className="flex items-center gap-2">
               {view === 'gov' ? (
-                <button type="button" onClick={() => onViewChange('sign-in')} className="glass-button-secondary px-3 py-2 text-[13px]">
+                <button
+                  type="button"
+                  onClick={() => onViewChange('sign-in')}
+                  className="inline-flex h-10 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                >
                   <ArrowLeft size={14} />
                   Назад
                 </button>
               ) : null}
-              <button type="button" onClick={onBack} className="glass-button-secondary px-3 py-2 text-[13px]">
+              <button
+                type="button"
+                onClick={onBack}
+                className="inline-flex h-10 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+              >
                 <X size={14} />
                 Закрыть
               </button>
@@ -461,14 +440,14 @@ export default function AuthPage({
             <div className="grid gap-4">
               {view !== 'gov' ? (
                 <>
-                  <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/80 bg-white/60 p-1 shadow-matte">
+                  <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1">
                     {['sign-in', 'sign-up'].map(mode => (
                       <button
                         key={mode}
                         type="button"
                         onClick={() => onViewChange(mode)}
                         className={`rounded-2xl px-3 py-2 text-sm font-semibold transition ${
-                          formMode === mode ? 'bg-slate-900 text-white shadow-matte' : 'text-slate-600 hover:bg-white/80'
+                          formMode === mode ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-white'
                         }`}
                       >
                         {mode === 'sign-in' ? 'Вход' : 'Регистрация'}
@@ -487,18 +466,30 @@ export default function AuthPage({
                 </>
               ) : null}
 
-              <div className="rounded-2xl border border-white/80 bg-white/65 p-3.5 shadow-matte">
-                <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">
-                  Быстрый тест
+              <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-900 text-white">
+                    <KeyRound size={15} />
+                  </span>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Быстрый demo-доступ</div>
+                    <div className="text-xs leading-5 text-slate-500">
+                      Для защиты доступны быстрые входы по ролям. Живые роли лежат в `profiles`, а пароли Supabase для demo email не заведены.
+                    </div>
+                  </div>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-3">
-                  <DemoCard role="citizen" onPick={setDemoCredentials} />
-                  <DemoCard role="business" onPick={setDemoCredentials} />
-                  <DemoCard role="government" onPick={setDemoCredentials} />
+                  {Object.values(DEMO_PRESETS).map(preset => (
+                    <DemoPresetButton
+                      key={preset.role}
+                      preset={preset}
+                      onClick={() => handleDemoAccess(preset.role)}
+                    />
+                  ))}
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-white/80 bg-white/65 p-3.5 text-[13px] leading-6 text-slate-600 shadow-matte">
+              <div className="rounded-2xl border border-slate-200 bg-white p-3.5 text-[13px] leading-6 text-slate-600">
                 <span className="font-semibold text-slate-900">Supabase:</span>{' '}
                 Google <strong>{googleEnabled ? 'on' : 'off'}</strong>, email confirmation <strong>{emailConfirmationRequired ? 'on' : 'off'}</strong>
               </div>
@@ -534,7 +525,11 @@ export default function AuthPage({
                     autoComplete="current-password"
                   />
 
-                  <button type="submit" disabled={submitting || loading} className="glass-button-primary h-12 rounded-2xl">
+                  <button
+                    type="submit"
+                    disabled={submitting || loading}
+                    className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-slate-900 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
                     {submitting || loading ? <LoaderCircle className="animate-spin" size={16} /> : <Landmark size={16} />}
                     Войти
                   </button>
@@ -546,7 +541,7 @@ export default function AuthPage({
                       type="button"
                       onClick={handleGoogleAuth}
                       disabled={submitting || loading || !googleEnabled}
-                      className={`glass-button-secondary h-12 rounded-2xl border-white/80 bg-white/85 text-slate-800 ${!googleEnabled ? 'cursor-not-allowed opacity-60' : ''}`}
+                      className={`inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-slate-50 ${!googleEnabled ? 'cursor-not-allowed opacity-60' : ''}`}
                     >
                       {submitting || loading ? <LoaderCircle className="animate-spin" size={16} /> : <GoogleIcon />}
                       {googleEnabled ? 'Войти через Google' : 'Google сейчас недоступен'}
@@ -612,7 +607,11 @@ export default function AuthPage({
                     autoComplete={formMode === 'sign-up' ? 'new-password' : 'current-password'}
                   />
 
-                  <button type="submit" disabled={submitting || loading} className="glass-button-primary h-12 rounded-2xl">
+                  <button
+                    type="submit"
+                    disabled={submitting || loading}
+                    className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-slate-900 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
                     {submitting || loading ? <LoaderCircle className="animate-spin" size={16} /> : <Mail size={16} />}
                     {formMode === 'sign-up' ? 'Создать аккаунт' : 'Войти'}
                   </button>

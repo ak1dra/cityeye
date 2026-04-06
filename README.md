@@ -1,8 +1,9 @@
 <div align="center">
 
 <img src="https://img.shields.io/badge/Decentrathon_5.0-AI_for_Government-6366f1?style=for-the-badge" alt="Decentrathon 5.0" />
-<img src="https://img.shields.io/badge/stack-React_·_Node_·_Supabase-0ea5e9?style=for-the-badge" alt="Stack" />
-<img src="https://img.shields.io/badge/AI-Qwen3_·_Deepseek_·_RAGFlow-10b981?style=for-the-badge" alt="AI" />
+<img src="https://img.shields.io/badge/stack-Next.js_·_Supabase_·_Alem_AI-0ea5e9?style=for-the-badge" alt="Stack" />
+<img src="https://img.shields.io/badge/AI-Qwen3_·_DeepSeek_·_RAGFlow-10b981?style=for-the-badge" alt="AI" />
+<img src="https://img.shields.io/badge/deploy-Vercel-000000?style=for-the-badge&logo=vercel" alt="Vercel" />
 
 # 🏙 CityEye
 
@@ -10,7 +11,9 @@
 
 **Не просто принять обращение. Довести его до подтверждённого результата.**
 
-[Демо](#-демо-доступ) · [Быстрый старт](#-быстрый-старт) · [Архитектура](#-архитектура) · [API](#-api)
+🌐 **Live:** [cityeye-fqmo.vercel.app](https://cityeye-fqmo.vercel.app)
+
+[Демо](#-тестовый-доступ) · [Быстрый старт](#-быстрый-старт) · [Архитектура](#-архитектура) · [API](#-api) · [Deploy](#-deploy-vercel)
 
 </div>
 
@@ -34,7 +37,7 @@
 
 | Возможность | Описание |
 |---|---|
-| **AI Triage Pipeline** | 10-этапный pipeline: OCR → Classify → Embed → Dedup → Route → Score → Explain. Не one-shot prompt, а полноценный ML-контур |
+| **AI Triage Pipeline** | 10-этапный pipeline: OCR → Classify → Embed → Dedup → Route → Score → Explain. Не one-shot prompt, а прикладной AI-контур |
 | **AI Verify** | Сравнение фото «до/после» через vision-модель. Вердикт: `VERIFIED` / `SUSPICIOUS` / `NOT_FIXED` |
 | **RAG-маршрутизация** | Knowledge Base акимата (отделы, правила, SLA, районы, shared-case протоколы) через RAGFlow |
 | **Explainable AI** | Каждое решение AI прозрачно: confidence score, факторы, routing reasoning, pipeline trace |
@@ -42,8 +45,9 @@
 | **Голосовой ввод** | Speech-to-text на казахском языке (`speech-to-text-kk`) |
 | **Realtime-обновления** | Supabase Realtime для live-синхронизации между всеми ролями |
 | **SSE Streaming** | Потоковая передача прогресса AI pipeline в реальном времени |
-| **Workspace подрядчика** | Рабочие задания, SLA, дедлайны, загрузка proof, координация с акиматом |
+| **Кабинет подрядчика** | Рабочие задания, SLA, дедлайны, загрузка proof, координация с акиматом |
 | **Публичная карта** | Интерактивная карта проблем города + лента прозрачности |
+| **Vercel Deploy** | Production-деплой с автоматическим CI/CD через GitHub |
 
 ---
 
@@ -54,7 +58,7 @@ CityEye опирается не на один prompt, а на **многоэта
 ```
 ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐
 │  INPUT  │──▶│   OCR   │──▶│ CLASSIFY│──▶│  EMBED  │──▶│  DEDUP  │
-│ фото,   │   │Deepseek │   │ Qwen 3  │   │text-1024│   │geo +    │
+│ фото,   │   │DeepSeek │   │ Qwen 3  │   │text-1024│   │geo +    │
 │ текст,  │   │  vision │   │тип,     │   │vectorize│   │reranker │
 │ голос   │   │         │   │severity │   │         │   │         │
 └─────────┘   └─────────┘   └─────────┘   └─────────┘   └─────────┘
@@ -62,7 +66,7 @@ CityEye опирается не на один prompt, а на **многоэта
 ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐        │
 │ VERIFY  │◀──│ EXPLAIN │◀──│  SCORE  │◀──│  ROUTE  │◀───────┘
 │до/после │   │confidence│  │priority │   │RAGFlow  │
-│Deepseek │   │trace    │   │score    │   │+ Qwen 3 │
+│DeepSeek │   │trace    │   │score    │   │+ Qwen 3 │
 └─────────┘   └─────────┘   └─────────┘   └─────────┘
 ```
 
@@ -79,15 +83,15 @@ CityEye опирается не на один prompt, а на **многоэта
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                     Frontend (React 18)                   │
+│              Next.js App Router (Fullstack)               │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────┐ │
 │  │  Карта   │ │  Лента   │ │ Дашборд  │ │  Workspace  │ │
 │  │ проблем  │ │прозрачн. │ │ акимата  │ │ подрядчика  │ │
 │  └──────────┘ └──────────┘ └──────────┘ └─────────────┘ │
 └──────────────────────┬───────────────────────────────────┘
-                       │ REST + SSE
+                       │ same-origin routes + API
 ┌──────────────────────┴───────────────────────────────────┐
-│                   Backend (Express.js)                    │
+│               Route Handlers + Server Logic               │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────┐ │
 │  │ analyze  │ │  verify  │ │ reports  │ │  assistant   │ │
 │  │ /stream  │ │ до/после │ │   CRUD   │ │  AI-советы   │ │
@@ -96,7 +100,7 @@ CityEye опирается не на один prompt, а на **многоэта
                        │
 ┌──────────────────────┴───────────────────────────────────┐
 │                     AI Services Layer                     │
-│  Qwen 3 · Deepseek OCR · text-1024 · Reranker · STT-kk │
+│  Qwen 3 · DeepSeek OCR · text-1024 · Reranker · STT-kk │
 │  RAGFlow (Knowledge Base) · Langfuse (Tracing)           │
 └──────────────────────┬───────────────────────────────────┘
                        │
@@ -175,14 +179,16 @@ knowledge-base/
 
 | Слой | Технология |
 |---|---|
-| **Frontend** | React 18 · Vite · Tailwind CSS · Framer Motion · Recharts · Lucide |
-| **Backend** | Node.js · Express |
+| **App Runtime** | Next.js 14 App Router |
+| **Deploy** | Vercel (CI/CD из GitHub, Fluid Compute) |
+| **UI** | React 18 · Tailwind CSS · Framer Motion · Recharts · Lucide |
+| **Server** | Next.js Route Handlers · Node.js |
 | **Database** | Supabase PostgreSQL |
 | **Storage** | Supabase Storage |
 | **Realtime** | Supabase Realtime (WebSocket) |
 | **Карты** | Yandex Maps API |
 | **LLM** | Qwen 3 via Alem AI |
-| **Vision/OCR** | Deepseek OCR via Alem AI |
+| **Vision/OCR** | DeepSeek OCR via Alem AI |
 | **Embeddings** | text-1024 via Alem AI |
 | **Reranker** | Reranker via Alem AI |
 | **STT** | speech-to-text-kk via Alem AI |
@@ -214,26 +220,49 @@ knowledge-base/
 
 ### Предварительные требования
 
-- Node.js 18+
+- Node.js 20+
 - Supabase-проект (PostgreSQL + Storage)
-- API-ключи Alem AI (Qwen 3, Deepseek OCR, Embedder, Reranker, STT)
+- API-ключи Alem AI (Qwen 3, DeepSeek OCR, Embedder, Reranker, STT)
 - RAGFlow instance (для RAG-маршрутизации)
 
 ### Установка
 
 ```bash
 # Клонировать репозиторий
-git clone https://github.com/newgoverment/cityeye.git
+git clone https://github.com/ak1dra/cityeye.git
 cd cityeye
 
-# Установить зависимости
+# Установить зависимости одного fullstack-проекта
 npm install
-npm --prefix backend install
-npm --prefix frontend install
 
-# Настроить окружение
-cp .env.example backend/.env
-# Заполнить backend/.env ключами (см. ниже)
+# Создать .env.local из шаблона
+npm run setup:env
+# Затем заполнить .env.local ключами (см. ниже)
+```
+
+### Windows-friendly запуск
+
+Проект теперь можно запускать на Windows без Git Bash и без Unix-команд:
+
+```powershell
+git clone https://github.com/ak1dra/cityeye.git
+cd cityeye
+npm install
+npm run setup:env
+npm run dev
+```
+
+Что исправлено для Windows:
+
+- один runtime: `Next.js`, без отдельного Express-процесса;
+- один запуск: `npm run dev`;
+- создание `.env.local` не требует `cp`.
+
+Основной конфиг теперь хранится в корневом `.env.local`:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
 ### Переменные окружения
@@ -243,7 +272,7 @@ cp .env.example backend/.env
 ALEM_API_KEY=your_key
 ALEM_MODEL=qwen3
 
-# Deepseek OCR (vision: извлечение текста из фото)
+# DeepSeek OCR (vision: извлечение текста из фото)
 ALEM_OCR_API_KEY=your_key
 ALEM_OCR_MODEL=deepseek-ocr
 
@@ -272,11 +301,16 @@ LANGFUSE_BASE_URL=https://a1-langfuse1.alem.ai
 # Supabase
 SUPABASE_URL=your_supabase_url
 SUPABASE_ANON_KEY=your_anon_key
-VITE_SUPABASE_URL=your_supabase_url
-VITE_SUPABASE_ANON_KEY=your_anon_key
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 ```
 
 ### Подготовка базы данных
+
+Можно использовать один из двух путей:
+
+1. через `psql`, если у вас есть `DATABASE_URL`
+2. через Supabase SQL Editor, если удобнее применять SQL вручную
 
 ```bash
 # Применить миграции
@@ -285,10 +319,13 @@ psql $DATABASE_URL < supabase/migrations/20260403_add_ai_triage_fields.sql
 psql $DATABASE_URL < supabase/migrations/20260403_align_reports_runtime_schema.sql
 psql $DATABASE_URL < supabase/migrations/20260403_create_reports_images_bucket.sql
 psql $DATABASE_URL < supabase/migrations/20260405_add_contractor_execution_fields.sql
+psql $DATABASE_URL < supabase/migrations/20260406_add_reports_runtime_indexes.sql
 
-# Загрузить демо-данные
+# При необходимости загрузить тестовые данные
 psql $DATABASE_URL < supabase/seeds/20260405_golden_demo_set.sql
 ```
+
+Если запускаете через Supabase SQL Editor, сначала примените файлы из `supabase/migrations/`, затем выполните [20260405_golden_demo_set.sql](supabase/seeds/20260405_golden_demo_set.sql).
 
 ### Запуск
 
@@ -296,14 +333,29 @@ psql $DATABASE_URL < supabase/seeds/20260405_golden_demo_set.sql
 npm run dev
 ```
 
+Это кроссплатформенный запуск:
+
+- macOS / Linux: работает из Terminal
+- Windows: работает из PowerShell или Command Prompt
+
 | Сервис | URL |
 |---|---|
-| Frontend | `http://localhost:5173` |
-| Backend | `http://localhost:3001` |
+| App | `http://localhost:3000` |
+| API | `http://localhost:3000/api/*` |
+
+### Recovery flow для локального runtime
+
+Если после `build/start` карта или страницы начинают отдавать `500`, сначала очистите stale Next cache:
+
+```bash
+npm run reset:next
+npm run build
+npm run start
+```
 
 ---
 
-## 🎯 Демо-доступ
+## 🎯 Тестовый доступ
 
 | Роль | Email | Пароль | Что показать |
 |---|---|---|---|
@@ -311,7 +363,9 @@ npm run dev
 | 🏛 Акимат | `gov@cityeye.kz` | `CityEye2026` | AI-досье, маршрутизация, управление очередями |
 | 🔧 Подрядчик | `business@cityeye.kz` | `Business2026` | Рабочие задания, proof-загрузка, AI Verify |
 
-### Демо-сценарий
+Эти аккаунты должны быть созданы в живом `Supabase Auth`.
+
+### Сценарий показа
 
 1. **Житель** фотографирует яму / неосвещённый участок / мусор
 2. **AI Pipeline** анализирует: тип, severity, маршрут, дубликаты
@@ -326,22 +380,19 @@ npm run dev
 
 ```
 cityeye/
-├── backend/
-│   ├── routes/
-│   │   ├── analyze.js          # AI triage endpoint + SSE streaming
-│   │   ├── verify.js           # AI Verify до/после
-│   │   ├── analytics.js        # Аналитика
-│   │   ├── assistant.js        # AI-ассистент акимата
-│   │   └── speechToText.js     # STT endpoint
-│   ├── src/
-│   │   ├── aiPipeline.js       # 10-этапный AI pipeline
-│   │   ├── alemServices.js     # Обёртка над Alem AI API
-│   │   ├── ragService.js       # RAGFlow integration
-│   │   ├── analytics.js        # Логика аналитики
-│   │   ├── reportStore.js      # Supabase data layer
-│   │   └── index.js            # Express server
-│   └── data/
-│       └── reports.json        # Fallback data
+├── app/
+│   ├── map/                    # /map
+│   ├── feed/                   # /feed
+│   ├── report/                 # /report
+│   ├── gov/                    # /gov
+│   ├── contractor/             # /contractor
+│   ├── auth/                   # /auth/*
+│   └── api/                    # same-origin API route handlers
+├── components/
+│   └── app/                    # page clients, navbar, role gate, provider
+├── lib/
+│   ├── client/                 # route helpers
+│   └── server/                 # Next server helpers (auth, assistant, analyze)
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
@@ -354,7 +405,7 @@ cityeye/
 │   │   │   └── GlassPanel.jsx           # Glass-morphism UI
 │   │   ├── tabs/
 │   │   │   ├── Dashboard.jsx            # Дашборд акимата
-│   │   │   ├── BusinessDashboard.jsx    # Workspace подрядчика
+│   │   │   ├── BusinessDashboard.jsx    # Кабинет подрядчика
 │   │   │   ├── ReportTab.jsx            # Создание кейса
 │   │   │   ├── FeedTab.jsx              # Лента прозрачности
 │   │   │   └── MapTab.jsx               # Карта проблем
@@ -363,9 +414,10 @@ cityeye/
 │   │   │   ├── contractorModel.js       # Бизнес-логика подрядчика
 │   │   │   ├── reportCollaboration.js   # Shared-case логика
 │   │   │   └── supabase.js              # Supabase client
-│   │   ├── api.js                       # API клиент
-│   │   └── App.jsx                      # Root component
-│   └── tailwind.config.js
+│   │   └── api.js                       # same-origin API клиент
+├── backend/
+│   └── src/                             # legacy server logic, переиспользуемая в Next до полного cleanup
+├── public/                              # runtime static assets
 ├── knowledge-base/                      # RAG Knowledge Base
 │   ├── 01_departments.md
 │   ├── 02_routing_rules.md
@@ -374,11 +426,43 @@ cityeye/
 │   └── 05_shared_case_protocol.md
 ├── supabase/
 │   ├── migrations/                      # DB миграции
-│   └── seeds/                           # Демо-данные
+│   └── seeds/                           # Опциональные seed-наборы
 └── docs/
     ├── ARCHITECTURE.md
     └── overview.md
 ```
+
+---
+
+## ☁️ Deploy (Vercel)
+
+Проект задеплоен на **Vercel** с автоматическим CI/CD при каждом пуше в `main`.
+
+| Параметр | Значение |
+|---|---|
+| **Production URL** | [cityeye-fqmo.vercel.app](https://cityeye-fqmo.vercel.app) |
+| **Framework** | Next.js (auto-detected) |
+| **Node.js** | 20+ |
+| **Build** | `next build` |
+| **Region** | Auto |
+
+### Деплой своей копии
+
+1. **Fork** этот репозиторий
+2. Импортируйте проект в [vercel.com/new](https://vercel.com/new)
+3. Добавьте переменные окружения (см. [раздел выше](#переменные-окружения)):
+   - Все `ALEM_*` ключи (LLM, OCR, Embedder, Reranker, STT)
+   - `NEXT_PUBLIC_SUPABASE_URL` и `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `RAGFLOW_*` ключи (опционально, для RAG-маршрутизации)
+   - `LANGFUSE_*` ключи (опционально, для observability)
+4. Deploy — Vercel автоматически определит Next.js и соберёт проект
+
+```bash
+# Или через CLI
+npx vercel --prod
+```
+
+> **Важно:** все API-ключи Alem AI должны быть добавлены как Environment Variables в Vercel Dashboard (Settings → Environment Variables) для корректной работы AI pipeline в production.
 
 ---
 
@@ -391,11 +475,11 @@ cityeye/
 
 ### Масштабирование
 - [ ] Водительский канал (Mobility Intake) — фиксация дорожных проблем на ходу
-- [ ] City Packs — адаптация под конкретные города (Aktau, Taldykorgan)
+- [ ] City Packs — адаптация под конкретные города (Актау, Талдыкорган)
 - [ ] Domain fine-tuning на анонимизированных муниципальных данных
 - [ ] Интеграция с e-Otinish как официальным каналом
 
-### Production-hardening
+### Усиление production-готовности
 - [ ] Rate limiting, RBAC, audit log
 - [ ] Мониторинг SLA-нарушений
 - [ ] Batch-аналитика по районам и подрядчикам
@@ -411,7 +495,7 @@ cityeye/
 | **Старт кейса** | Длинная форма | Фото + AI |
 | **Triage** | Ручной | AI Pipeline |
 | **Маршрутизация** | Бюрократическая | RAG + AI + правила |
-| **Исполнитель** | Не виден | Workspace подрядчика |
+| **Исполнитель** | Не виден | Кабинет подрядчика |
 | **Координация** | Нет | Shared-case model |
 | **Верификация** | Отметка «исполнено» | AI Verify до/после |
 | **Прозрачность** | Закрытая система | Публичная карта + лента |
@@ -423,7 +507,7 @@ cityeye/
 ## 📖 Документация
 
 - [Архитектура](docs/ARCHITECTURE.md) — техническое описание системы
-- [Обзор продукта](docs/overview.md) — product overview
+- [Обзор продукта](docs/overview.md) — обзор продукта
 
 ---
 
@@ -446,6 +530,8 @@ cityeye/
 
 **CityEye** — инфраструктурный execution layer для современного города.
 
-*Built with ❤️ for Decentrathon 5.0*
+🌐 [cityeye-fqmo.vercel.app](https://cityeye-fqmo.vercel.app)
+
+Сделано для Decentrathon 5.0 · Deployed on Vercel
 
 </div>

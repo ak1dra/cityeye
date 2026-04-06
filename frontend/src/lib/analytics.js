@@ -40,6 +40,14 @@ function toFiniteNumber(value) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function hasValidGeoPoint(lat, lng) {
+  return lat != null
+    && lng != null
+    && Math.abs(lat) <= 90
+    && Math.abs(lng) <= 180
+    && !(lat === 0 && lng === 0);
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -84,9 +92,9 @@ function extractDistrict(address = '') {
 function buildHeatWeight(report = {}) {
   const severity = normalizeSeverityKey(report.severity, report.status);
   const base =
-    severity === 'critical' ? 1.0
-      : severity === 'high' ? 0.7
-        : severity === 'medium' ? 0.45
+    severity === 'critical' ? 1.05
+      : severity === 'high' ? 0.78
+        : severity === 'medium' ? 0.5
           : severity === 'low' ? 0.25
             : 0;
 
@@ -95,9 +103,27 @@ function buildHeatWeight(report = {}) {
   const createdAt = report.created_at ? new Date(report.created_at).getTime() : null;
   const ageDays = createdAt ? Math.max(0, (Date.now() - createdAt) / 86400000) : 14;
   const recencyDecay = clamp(1 - (ageDays / 21) * 0.6, 0.35, 1);
+  const statusKey = toLower(report.status);
+  const priorityScore = toFiniteNumber(report.priority_score);
+  const priorityBoost = priorityScore == null
+    ? 0
+    : clamp((priorityScore - 55) / 180, 0, 0.18);
+  const ageBoost =
+    ageDays >= 12 ? 0.12
+      : ageDays >= 6 ? 0.06
+        : 0;
+  const executionBoost = ['triage', 'in_progress'].includes(statusKey) ? 0.04 : 0;
   const waitingBonus = toLower(report.status) === 'waiting_partner' ? 0.15 : 0;
   const sharedBonus = inferRoute(report) === 'shared' ? 0.08 : 0;
-  return Number(clamp(base * recencyDecay + waitingBonus + sharedBonus, 0.12, 1.35).toFixed(3));
+  const duplicateBoost = report.duplicate_likely ? 0.05 : 0;
+
+  return Number(
+    clamp(
+      base * recencyDecay + priorityBoost + ageBoost + executionBoost + waitingBonus + sharedBonus + duplicateBoost,
+      0.12,
+      1.55
+    ).toFixed(3)
+  );
 }
 
 function distanceMeters(left, right) {
@@ -118,32 +144,9 @@ function distanceMeters(left, right) {
   return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function buildGeoAnalytics(reports = []) {
-  const geoHeatmapPoints = reports
-    .filter(report => isOpenStatus(report.status))
-    .map(report => {
-      const lat = toFiniteNumber(report.lat);
-      const lng = toFiniteNumber(report.lng);
-      if (lat == null || lng == null) return null;
-      const type = normalizeType(report.type ?? report.category);
-      return {
-        id: report.id,
-        lat,
-        lng,
-        weight: buildHeatWeight(report),
-        type,
-        type_label: TYPE_LABELS[type] ?? TYPE_LABELS.other,
-        severity: normalizeSeverityKey(report.severity, report.status),
-        status: report.status || 'new',
-        route: inferRoute(report),
-        shared_case: Boolean(report.shared_case || report.responsible_role === 'shared'),
-        district: extractDistrict(report.address),
-      };
-    })
-    .filter(point => point && point.weight > 0);
-
+function clusterGeoPoints(points = []) {
   const clusters = [];
-  for (const point of [...geoHeatmapPoints].sort((left, right) => right.weight - left.weight)) {
+  for (const point of [...points].sort((left, right) => right.weight - left.weight)) {
     let closest = null;
     let closestDistance = Number.POSITIVE_INFINITY;
     for (const cluster of clusters) {
@@ -159,6 +162,7 @@ function buildGeoAnalytics(reports = []) {
         center_lat: point.lat,
         center_lng: point.lng,
         sum_weight: point.weight,
+        peak_weight: point.weight,
         count: 1,
         route_counts: { [point.route]: 1 },
         districts: point.district ? { [point.district]: 1 } : {},
@@ -171,13 +175,20 @@ function buildGeoAnalytics(reports = []) {
     closest.center_lat = ((closest.center_lat * closest.sum_weight) + (point.lat * point.weight)) / totalWeight;
     closest.center_lng = ((closest.center_lng * closest.sum_weight) + (point.lng * point.weight)) / totalWeight;
     closest.sum_weight = totalWeight;
+    closest.peak_weight = Math.max(closest.peak_weight, point.weight);
     closest.count += 1;
     closest.route_counts[point.route] = (closest.route_counts[point.route] ?? 0) + 1;
     closest.type_counts[point.type] = (closest.type_counts[point.type] ?? 0) + 1;
     if (point.district) closest.districts[point.district] = (closest.districts[point.district] ?? 0) + 1;
   }
 
-  const hotspots = clusters
+  return clusters;
+}
+
+export function buildGeoHotspotsFromPoints(points = []) {
+  const clusters = clusterGeoPoints(points);
+
+  return clusters
     .filter(cluster => cluster.count >= 2 || cluster.sum_weight >= 1.5)
     .sort((left, right) => right.sum_weight - left.sum_weight)
     .slice(0, 6)
@@ -196,16 +207,49 @@ function buildGeoAnalytics(reports = []) {
         center_lng: Number(cluster.center_lng.toFixed(6)),
         intensity,
         count: cluster.count,
+        radius_m:
+          cluster.count >= 5 || cluster.sum_weight >= 4.2 ? 310
+            : cluster.count >= 3 || cluster.sum_weight >= 2.6 ? 240
+              : 180,
+        peak_weight: Number(cluster.peak_weight.toFixed(2)),
         top_types: topTypes,
         route_hint: routeHint,
         label: dominantDistrict ? `${dominantDistrict} район` : `Горячая зона ${index + 1}`,
         pressure_label:
-          intensity >= 0.9 ? 'Критическая нагрузка'
-            : intensity >= 0.65 ? 'Высокое давление'
+          intensity >= 1 ? 'Критическая нагрузка'
+            : intensity >= 0.72 ? 'Высокое давление'
               : 'Растущий поток',
         summary: `${cluster.count} кейс(ов) · ${topTypes.join(' / ')}`,
       };
     });
+
+}
+
+function buildGeoAnalytics(reports = []) {
+  const geoHeatmapPoints = reports
+    .filter(report => isOpenStatus(report.status))
+    .map(report => {
+      const lat = toFiniteNumber(report.lat);
+      const lng = toFiniteNumber(report.lng);
+      if (!hasValidGeoPoint(lat, lng)) return null;
+      const type = normalizeType(report.type ?? report.category);
+      return {
+        id: report.id,
+        lat,
+        lng,
+        weight: buildHeatWeight(report),
+        type,
+        type_label: TYPE_LABELS[type] ?? TYPE_LABELS.other,
+        severity: normalizeSeverityKey(report.severity, report.status),
+        status: report.status || 'new',
+        route: inferRoute(report),
+        shared_case: Boolean(report.shared_case || report.responsible_role === 'shared'),
+        district: extractDistrict(report.address),
+      };
+    })
+    .filter(point => point && point.weight > 0);
+
+  const hotspots = buildGeoHotspotsFromPoints(geoHeatmapPoints);
 
   return { geoHeatmapPoints, hotspots };
 }

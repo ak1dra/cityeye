@@ -424,7 +424,7 @@ function ReportThread({
             </div>
           </div>
 
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <span
               className="rounded-full border px-3 py-1 text-[11px] font-semibold"
               style={{ background: routeStyle.bg, borderColor: routeStyle.border, color: routeStyle.color }}
@@ -436,19 +436,7 @@ function ReportThread({
             </span>
             {isSharedCase(report) ? (
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700">
-                Shared-case
-              </span>
-            ) : null}
-            {report.confidence_label ? (
-              <span
-                className="rounded-full border px-3 py-1 text-[11px] font-semibold"
-                style={{
-                  background: ai.confidence.bg,
-                  borderColor: ai.confidence.border,
-                  color: ai.confidence.color,
-                }}
-              >
-                AI {String(confidence).toUpperCase()}
+                Совместный кейс
               </span>
             ) : null}
           </div>
@@ -457,15 +445,9 @@ function ReportThread({
             {report.ai_comment || report.description || report.comment || 'Описание пока не добавлено.'}
           </div>
 
-          <div className="mt-4 grid gap-3 text-[13px] text-slate-500 sm:grid-cols-2">
-            <div className="rounded-2xl border border-white/70 bg-white/72 px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Источник</div>
-              <div className="mt-2 font-semibold text-slate-900">{reporterName}</div>
-            </div>
-            <div className="rounded-2xl border border-white/70 bg-white/72 px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Исполнитель</div>
-              <div className="mt-2 font-semibold text-slate-900">{assignedOrg || routeLabel}</div>
-            </div>
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-slate-500">
+            <span>Источник: <span className="font-semibold text-slate-700">{reporterName}</span></span>
+            <span>Исполнитель: <span className="font-semibold text-slate-700">{assignedOrg || routeLabel}</span></span>
           </div>
 
           {beforeImage || afterImage ? (
@@ -766,12 +748,6 @@ export default function FeedTab({ reports = [], onTabChange, user, onOpenReportO
         transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
         className="glass-panel-matte relative overflow-hidden rounded-[30px] px-5 py-5 shadow-matte-xl sm:px-6"
       >
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -left-10 top-0 h-28 w-40 rounded-full bg-[radial-gradient(circle,rgba(59,130,246,0.12)_0%,rgba(59,130,246,0)_72%)]" />
-          <div className="absolute right-0 top-0 h-32 w-44 rounded-full bg-[radial-gradient(circle,rgba(16,185,129,0.12)_0%,rgba(16,185,129,0)_74%)]" />
-          <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/70 to-transparent" />
-        </div>
-
         <div className="relative flex flex-col gap-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
@@ -786,13 +762,10 @@ export default function FeedTab({ reports = [], onTabChange, user, onOpenReportO
               </div>
             </div>
             <div className="flex items-center gap-2 self-start lg:self-auto">
-              <span className="hidden rounded-full border border-white/80 bg-white/70 px-3 py-2 text-[12px] font-semibold text-slate-500 md:inline-flex">
-                Алматы
-              </span>
               <button onClick={() => onTabChange?.('report')} className="glass-button-primary px-5 py-3 text-[14px]">
                 <span className="inline-flex items-center gap-2">
                   <Ic n="plus" size={16} color="#ffffff" />
-                  Сообщить
+                  Новое обращение
                 </span>
               </button>
             </div>

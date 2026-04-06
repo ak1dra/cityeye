@@ -73,6 +73,14 @@ function toFiniteNumber(value) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function hasValidGeoPoint(lat, lng) {
+  return lat != null
+    && lng != null
+    && Math.abs(lat) <= 90
+    && Math.abs(lng) <= 180
+    && !(lat === 0 && lng === 0);
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -131,7 +139,7 @@ export function buildGeoAnalytics(reports = []) {
     .map(report => {
       const lat = toFiniteNumber(report.lat);
       const lng = toFiniteNumber(report.lng);
-      if (lat == null || lng == null) return null;
+      if (!hasValidGeoPoint(lat, lng)) return null;
 
       const type = normalizeType(report.type ?? report.category);
       return {

@@ -52,7 +52,7 @@ export function AkimatAssistantPanel({
       'AI-ассистент акимата', '', data.executive_summary, '',
       data.recommended_department ? `Департамент: ${data.recommended_department}` : null,
       data.recommended_route ? `Маршрут: ${AI_ROUTE_META[data.recommended_route]?.label ?? data.recommended_route}` : null,
-      data.sla_target ? `SLA: ${data.sla_target}` : null,
+      data.sla_target ? `Срок реагирования: ${data.sla_target}` : null,
       data.next_actions?.length ? `Действия: ${data.next_actions.join(' | ')}` : null,
     ].filter(Boolean);
     try { await navigator.clipboard.writeText(lines.join('\n')); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
@@ -97,9 +97,9 @@ export function AkimatAssistantPanel({
           </div>
 
           {/* Summary */}
-          <div className="bg-gradient-to-br from-slate-50 to-indigo-50 border border-indigo-200 rounded-[14px] px-4 py-3.5 mb-3.5">
-            <div className="text-sm font-bold text-slate-900 mb-2">Executive summary</div>
-            <div className="text-sm text-slate-600 leading-relaxed">{data.executive_summary}</div>
+          <div className="bg-gradient-to-br from-slate-50 to-indigo-50/60 border border-indigo-100 rounded-[14px] px-4 py-3.5 mb-3.5">
+            <div className="text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2">Сводка</div>
+            <div className="text-[14px] text-slate-700 leading-relaxed">{data.executive_summary}</div>
           </div>
 
           {/* Meta */}
@@ -107,11 +107,11 @@ export function AkimatAssistantPanel({
             <MetaCell label="Департамент" value={data.recommended_department || 'Не требуется'} />
             <MetaCell label="Маршрут" value={routeTone?.label || 'Нет'} />
             <MetaCell label="Очередь" value={data.department_queue || 'Не задана'} />
-            <MetaCell label="Контроль" value={data.control_mode || 'Не задан'} />
-            <MetaCell label="SLA" value={data.sla_target || 'Не задан'} />
+            <MetaCell label="Режим контроля" value={data.control_mode || 'Не задан'} />
+            <MetaCell label="Срок реагирования" value={data.sla_target || 'Не задан'} />
             <MetaCell label="Эскалация" value={data.escalation_owner || 'Не требуется'} />
-            <MetaCell label="Причина" value={data.reasoning} />
-            <MetaCell label="Уверенность" value={confTone.label} />
+            <MetaCell label="Обоснование" value={data.reasoning} />
+            <MetaCell label="Уверенность AI" value={confTone.label} />
           </div>
 
           {/* Apply route */}

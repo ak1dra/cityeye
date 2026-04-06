@@ -25,7 +25,7 @@ CityEye строится вокруг одной сущности: **город�
 - `ReportTab` для создания обращений;
 - `Dashboard` для акимата;
 - `BusinessDashboard` для частного сектора;
-- `AuthModal` с demo-role login;
+- `AuthPage` для role-aware входа и demo-login;
 - `CollaborationWidgets` для shared-case timeline и partner comments.
 
 ### Data layer
@@ -171,10 +171,12 @@ Business or government
 
 ### 6.1 Shell and navigation
 
-- [App.jsx](/Users/izbaskanaldabergen/cityeye/frontend/src/App.jsx)
-  - управляет табами `map / feed / report / gov / business`;
-  - читает и нормализует demo-user;
-  - подписывается на Supabase realtime.
+- [PageLayout.jsx](/Users/izbaskanaldabergen/cityeye/components/app/PageLayout.jsx)
+  - общий layout для route-based страниц;
+  - один Next runtime вместо tab-shell навигации.
+
+- [AppNavbar.jsx](/Users/izbaskanaldabergen/cityeye/components/app/AppNavbar.jsx)
+  - глобальная навигация по `map / feed / report / gov / contractor`.
 
 ### 6.2 Reporting
 
@@ -219,37 +221,47 @@ Business or government
 
 ---
 
-## 7. Backend component map
+## 7. Server component map
 
 ### 7.1 API shell
 
-- [index.js](/Users/izbaskanaldabergen/cityeye/backend/src/index.js)
+- [route.js](/Users/izbaskanaldabergen/cityeye/app/api/health/route.js)
   - health endpoint;
-  - mounting analyze router;
-  - REST endpoints for reports;
-  - patch validation.
+  - runtime metadata;
+  - active demo data mode.
+
+- [route.js](/Users/izbaskanaldabergen/cityeye/app/api/reports/route.js)
+  - paginated list endpoint;
+  - request parsing;
+  - create endpoint for authenticated actors.
 
 ### 7.2 AI route
 
-- [analyze.js](/Users/izbaskanaldabergen/cityeye/backend/routes/analyze.js)
+- [route.js](/Users/izbaskanaldabergen/cityeye/app/api/analyze/route.js)
   - calls external AI provider;
   - normalizes response shape;
-  - returns fallback mock if provider unavailable;
-  - isolates AI integration behind one route.
+  - uses shared validation and cache.
 
-С инженерной точки зрения это хороший задел под следующий шаг:
+- [route.js](/Users/izbaskanaldabergen/cityeye/app/api/analyze/stream/route.js)
+  - SSE streaming for pipeline progress;
+  - same wire shape as the original hackathon route.
 
-- текущий интерфейс уже общается с `/api/analyze`;
-- upgrade до `Qwen 3.5 Vision` можно сделать внутри backend route без перестройки всего frontend UX;
-- это позволяет эволюционно перейти от hackathon AI-assist к полноценному visual inspection pipeline.
+С инженерной точки зрения это даёт более чистый target state:
 
-### 7.3 Report store
+- интерфейс общается только с same-origin `app/api/*`;
+- runtime не зависит от отдельного Express-процесса;
+- upgrade AI-моделей можно делать внутри shared server layer без перестройки frontend UX.
+
+### 7.3 Report repository
+
+- [reportRepository.js](/Users/izbaskanaldabergen/cityeye/lib/server/reportRepository.js)
+  - единый read/write data layer для `reports`;
+  - explicit demo source policy (`seed` / `auto` / `supabase`);
+  - route-scoped list payloads и analytics source.
 
 - [reportStore.js](/Users/izbaskanaldabergen/cityeye/backend/src/reportStore.js)
-  - normalizes payloads and statuses;
-  - supports collaboration fields;
-  - supports status and full-patch update;
-  - persists into JSON file for server-side demo mode.
+  - reusable normalization logic;
+  - shared runtime constants and patchable fields.
 
 ---
 

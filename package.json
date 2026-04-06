@@ -2,16 +2,31 @@
   "name": "cityeye",
   "private": true,
   "version": "1.0.0",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "dev": "npm run dev:all",
-    "dev:all": "npm --prefix backend run start & npm --prefix frontend run dev & wait",
-    "dev:backend": "npm --prefix backend run start",
-    "dev:backend:watch": "npm --prefix backend run dev",
-    "dev:frontend": "npm --prefix frontend run dev",
-    "start": "npm --prefix backend run start",
-    "build": "npm --prefix frontend run build"
+    "setup:env": "node scripts/setup-env.mjs",
+    "reset:next": "node scripts/reset-next.mjs",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
   },
   "dependencies": {
-    "framer-motion": "^12.38.0"
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@fontsource/geist": "^5.2.8",
+    "@supabase/supabase-js": "^2.78.0",
+    "framer-motion": "^12.38.0",
+    "langfuse": "^3.38.20",
+    "lucide-react": "^1.7.0",
+    "next": "^14.2.30",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "recharts": "^3.8.1"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.27",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^3.4.17"
   }
 }

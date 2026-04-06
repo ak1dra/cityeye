@@ -230,13 +230,22 @@ async function stepDedup(ctx, classification, embedding, supabase, span) {
   let similarCount = 0;
   let similarReports = [];
 
-  if (supabase && ctx.lat && ctx.lng) {
+  if (supabase && ctx.lat != null && ctx.lng != null) {
     try {
+      const latDelta = 0.0025;
+      const lngDelta = 0.0025 / Math.max(Math.cos((ctx.lat * Math.PI) / 180), 0.3);
+
       // Geo-based: same type within 200m in last 7 days
       const { data } = await supabase
         .from('reports')
-        .select('id, title, address, type, severity, status, created_at')
+        .select('id, title, address, type, severity, status, created_at, lat, lng')
         .eq('type', classification.type)
+        .not('lat', 'is', null)
+        .not('lng', 'is', null)
+        .gte('lat', ctx.lat - latDelta)
+        .lte('lat', ctx.lat + latDelta)
+        .gte('lng', ctx.lng - lngDelta)
+        .lte('lng', ctx.lng + lngDelta)
         .not('status', 'in', '("resolved","verified","rejected")')
         .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
         .limit(20);
@@ -244,7 +253,7 @@ async function stepDedup(ctx, classification, embedding, supabase, span) {
       if (data?.length > 0) {
         // simple distance filter (Haversine approximation)
         const nearby = data.filter(r => {
-          if (!r.lat || !r.lng) return false;
+          if (r.lat == null || r.lng == null) return false;
           const dLat = (r.lat - ctx.lat) * 111320;
           const dLng = (r.lng - ctx.lng) * 111320 * Math.cos(ctx.lat * Math.PI / 180);
           return Math.sqrt(dLat * dLat + dLng * dLng) < 200;

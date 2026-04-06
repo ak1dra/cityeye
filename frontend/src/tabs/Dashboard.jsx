@@ -1010,13 +1010,13 @@ export default function Dashboard({ reports = [], analyticsOverview = null, load
           <div style={{ marginBottom: 20 }}>
             <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: '#0f172a' }}>Сегодня</h1>
             <p style={{ margin: '5px 0 0', fontSize: 14, color: '#64748b' }}>
-              {total} репортов всего · {newCnt} новых · {inProgCnt} в работе · {resolvedCnt} решено
+              {total} обращений всего · {newCnt} новых · {inProgCnt} в работе · {resolvedCnt} решено
             </p>
           </div>
 
           {/* ── Stat cards ── */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 22 }}>
-            <StatCard value={total}       label="Всего репортов"  color="#6366f1" icon="chart"  sub="в базе" />
+            <StatCard value={total}       label="Всего обращений"  color="#6366f1" icon="chart"  sub="в базе" />
             <StatCard value={newCnt}      label="Новые"           color="#f97316" icon="alert"  sub="ожидают реакции" />
             <StatCard value={inProgCnt}   label="В обработке"     color="#f59e0b" icon="clock"  sub="назначены" />
             <StatCard value={resolvedCnt} label="Решено"          color="#22c55e" icon="check"  sub="закрыто" />
@@ -1044,7 +1044,7 @@ export default function Dashboard({ reports = [], analyticsOverview = null, load
           <div style={{ background: '#fff', border: '1px solid #e8eaed', borderRadius: 16, padding: '20px 20px 12px', marginBottom: 20 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
               <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>Динамика репортов</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>Динамика обращений</div>
                 <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 3 }}>Последние 30 дней</div>
               </div>
               <div style={{ display: 'flex', gap: 16 }}>
@@ -1236,7 +1236,7 @@ export default function Dashboard({ reports = [], analyticsOverview = null, load
               </div>
             ) : tableRows.length === 0 ? (
               <div style={{ padding: '48px 0', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
-                {search || filterSev !== 'all' || filterSt !== 'all' ? 'Ничего не найдено по фильтрам' : 'Репортов пока нет'}
+                {search || filterSev !== 'all' || filterSt !== 'all' ? 'Ничего не найдено по фильтрам' : 'Обращений пока нет'}
               </div>
             ) : (
               <div style={{ overflowX: 'auto' }}>

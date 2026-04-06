@@ -29,6 +29,24 @@ export function VerifyBadge({ beforeUrl, afterUrl, type, description, existingVe
 
   if (!beforeUrl || !afterUrl) return null;
 
+  if (error && !result && !loading) {
+    return (
+      <div className="border-[1.5px] border-rose-200 bg-rose-50 rounded-xl px-3.5 py-2.5 text-[13px]">
+        <div className="flex items-center gap-2 mb-1.5">
+          <span className="w-6 h-6 rounded-lg flex items-center justify-center bg-rose-100 text-rose-700 text-sm font-extrabold">!</span>
+          <span className="font-bold text-rose-700">Ошибка проверки</span>
+        </div>
+        <p className="text-rose-600 text-xs leading-relaxed">{error}</p>
+        <button
+          onClick={runVerify}
+          className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-100 text-rose-700 text-xs font-bold hover:bg-rose-200 transition-colors"
+        >
+          Повторить проверку
+        </button>
+      </div>
+    );
+  }
+
   if (!result && !loading) {
     return (
       <button
@@ -59,9 +77,6 @@ export function VerifyBadge({ beforeUrl, afterUrl, type, description, existingVe
       )}
       {result?.changes_detected && (
         <p className="text-slate-500 text-[11px] mt-1 italic">Изменения: {result.changes_detected}</p>
-      )}
-      {error && (
-        <p className="text-red-600 text-[11px] mt-1">Ошибка: {error}</p>
       )}
     </div>
   );
